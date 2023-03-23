@@ -106,32 +106,41 @@ def send_to_netbox(svi_object, site, ip_address, logger=None):
         '10GBASE-T (10GE)': '10gbase-t',
         # add more mappings as needed
     }
-
-    type_str = str(netbox_interface.type)
-    type_access = type_mapping.get(type_str, 'other')
-
-    url = "http://ust-netbox/api/dcim/interfaces/"
-    headers = {
-        "Authorization": "Token 0123456789abcdef0123456789abcdef01234567",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+    
     payload = {
-        "device": device.id,
-        "name": svi_object.name,
-        "type": type_access,
-        "mtu": svi_object.mtu,
-        "mac_address": svi_object.mac_address,
-        "description": svi_object.desc,
-        "mode": svi_object.mode,
-        "untagged_vlan": vlan.id
-    }
-    response = requests.patch(f"{url}{netbox_interface.id}/", headers=headers, json=payload)
-    if response.status_code == 200:
-        if logger: logger.info(f"Data sent successfully to Netbox for interface with index {svi_object.index}")
+            "device": device.id,
+            "name": svi_object.name,
+            "type": type_access,
+            "mtu": svi_object.mtu,
+            "mac_address": svi_object.mac_address,
+            "description": svi_object.desc,
+            "mode": svi_object.mode,
+            "untagged_vlan": vlan.id
+        }
+    
+    if netbox_interface:
+        type_str = str(netbox_interface.type)
+        type_access = type_mapping.get(type_str, 'other')
+
+        url = "http://ust-netbox/api/dcim/interfaces/"
+        headers = {
+            "Authorization": "Token 0123456789abcdef0123456789abcdef01234567",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        
+        response = requests.patch(f"{url}{netbox_interface.id}/", headers=headers, json=payload)
+        if response.status_code == 200:
+            if logger: logger.info(f"Data sent successfully to Netbox for interface with index {svi_object.index}")
+        else:
+            if logger: logger.error(
+                f"Error sending data to Netbox. Status code: {response.status_code}. Response content: {response.content}")
     else:
-        if logger: logger.error(
-            f"Error sending data to Netbox. Status code: {response.status_code}. Response content: {response.content}")
+        response = requests.post(f"{url}", headers=headers, json=payload)
+        if response.status_code == 201:
+            print("Data sent successfully to Netbox for interface with index {0}".format(int_obj.index))
+        else:
+            print("Error sending data to Netbox. Status code: {0}. Response content: {1}".format(response.status_code, response.content))
 
 
 def write_info_interfaces(ip_address, community_string, site_slug, logger=None):
