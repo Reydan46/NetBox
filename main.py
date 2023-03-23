@@ -65,7 +65,6 @@ for device in devices_reader:
             allowed_ip=device['ip script'],
             logger=logger
         )
-        logger.info(error_message)
         if error_message:
             err = True
         else:
