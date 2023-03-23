@@ -98,12 +98,15 @@ for device in devices_reader:
                     )
 
                     # Получаем информацию об интерфейсах и отправляем её в NetBox
-                    write_info_interfaces(
+                    error_message = write_info_interfaces(
                         ip_address=device['ip device'],
                         community_string=device['community'],
                         site_slug=device['site_slug'],
                         logger=logger
                     )
+
+                    if error_message:
+                        err = True
     except Exception as e:
         err = True
         if not error_message:

@@ -81,6 +81,8 @@ def get_interfaces(ip_address, community_string, logger=None):
 
 
 def send_to_netbox(svi_object, site, ip_address, logger=None):
+    error_message = ''
+
     # Connect to the NetBox API
     netbox_url = "http://ust-netbox/"
     netbox_token = "0123456789abcdef0123456789abcdef01234567"
@@ -97,6 +99,8 @@ def send_to_netbox(svi_object, site, ip_address, logger=None):
 
     # Get the ID of the VLAN with the specified VLAN ID and associated with the specified site
     vlan = netbox.ipam.vlans.get(site=site, vid=svi_object.vlan_id)
+    if not vlan:
+        return f'Vlan ID {svi_object.vlan_id} not found in NetBox'
 
     # Get the existing interface object
     netbox_interface = netbox.dcim.interfaces.get(device=device.name, name=svi_object.name)
@@ -130,26 +134,34 @@ def send_to_netbox(svi_object, site, ip_address, logger=None):
 
         response = requests.patch(f"{url}{netbox_interface.id}/", headers=headers, json=payload)
         if response.status_code == 200:
-            if logger: logger.info(f"Data sent successfully to Netbox for interface with index {svi_object.index}")
+            if logger: logger.info(f"Data interface UPDATED in NetBox with index {svi_object.index}")
         else:
             if logger: logger.error(
                 f"Error sending data to Netbox. Status code: {response.status_code}. Response content: {response.content}")
     else:
         response = requests.post(f"{url}", headers=headers, json=payload)
         if response.status_code == 201:
-            if logger: logger.info(f"Data sent successfully to Netbox for interface with index {svi_object.index}")
+            if logger: logger.info(f"Data interface CREATED in NetBox with index {svi_object.index}")
         else:
             if logger: logger.error(
                 f"Error sending data to Netbox. Status code: {response.status_code}. Response content: {response.content}")
 
+    return error_message
+
 
 def write_info_interfaces(ip_address, community_string, site_slug, logger=None):
-    interfaces, error_message = get_interfaces(ip_address, community_string)
+    error_message = ''
+    interfaces, error_out = get_interfaces(ip_address, community_string)
+    if not error_message:
+        error_message = error_out
 
     if logger: logger.info("Interfaces:")
     for interface_obj in interfaces:
         if logger: logger.info(f"- Index: {interface_obj.index}, VLAN ID: {interface_obj.vlan_id}")
-        send_to_netbox(interface_obj, site_slug, ip_address, logger=logger)
+        error_out = send_to_netbox(interface_obj, site_slug, ip_address, logger=logger)
+        if not error_message:
+            error_message = error_out
+    return error_message
 
 
 if __name__ == "__main__":
