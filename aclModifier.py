@@ -3,13 +3,15 @@ import wexpect as expect
 
 def configure_access_list(ip_address, username, password, allowed_ip, logger=None):
     """
-    Configures the Standard IP access list ACL_SNMP on the switch using expect.
+    Configures the Standard IP access list ACL_SNMP on the switch using expect
     """
+    # Устанавливаем переменные по умолчанию
     error = ''
+    device_type = ''
 
     ssh_options = '-oKexAlgorithms=+diffie-hellman-group-exchange-sha1 -oStrictHostKeyChecking=accept-new'
 
-    if logger: logger.info(f'Try connect: {username}@{ip_address}')
+    if logger: logger.info(f'Connecting via ssh: {username}@{ip_address}')
     ssh = expect.spawn(f'ssh {ssh_options} {username}@{ip_address}')
 
     # Если процесс не завершился мгновенно (если всё хорошо)
@@ -34,8 +36,6 @@ def configure_access_list(ip_address, username, password, allowed_ip, logger=Non
                     or 'SG300' in output_inventory \
                     or 'SG350' in output_inventory:
                 device_type = 'SG'
-            else:
-                device_type = ''
 
             # Если модель устройства определена
             if device_type:
@@ -71,7 +71,7 @@ def configure_access_list(ip_address, username, password, allowed_ip, logger=Non
     else:
         error = 'Unable to connect'
 
-    return error
+    return device_type, error
 
 
 if __name__ == '__main__':
