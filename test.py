@@ -1,10 +1,6 @@
 import sys
 import logging
 import csv
-from aclModifier import configure_access_list
-from deviceResearch import get_device_info, create_netbox_device
-from ipAddition import create_ip_interface
-from vlanExtractor import get_interfaces, send_to_netbox, write_info_interfaces
 from prettytable import PrettyTable
 
 from snmp import snmpwalk, snmpwalk0
@@ -92,7 +88,7 @@ created_device, error_message = create_netbox_device(
     model=model,
     serial_number=serial_number,
     site_slug=site_slug,
-    device_role_name=device_role_name,
+    role=device_role_name,
     logger=logger
 )
 error_message = create_ip_interface(

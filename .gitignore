@@ -1,3 +1,5 @@
 /devices.csv
 /NetBox.log
 /.idea/
+/__pycache__
+/trunk.txt
