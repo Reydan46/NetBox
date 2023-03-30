@@ -41,9 +41,10 @@ print(key)
 
 ## How to get an encrypted password to use in devices.csv (enc_password)
 ``` 
+import os
 from cryptography.fernet import Fernet
 password_salt = os.environ.get('NETBOX_PASSWORD_SALT')
-password_encoder = Fernet(__password_salt)
+password_encoder = Fernet(password_salt)
 password=b"SuperP@ssw0rd"
 encrypted_password = password_encoder.encrypt(password).decode('utf-8')
 print(encrypted_password)

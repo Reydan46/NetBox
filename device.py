@@ -20,32 +20,34 @@ class Interface:
 
 
 class NetworkDevice:
-    __netbox = None
-    __netbox_url = None
-    __netbox_token = None
-    __netbox_device = None
-    __netbox_device_interface = None
-    __netbox_device_ip_address = None
-
-    __password_salt = None
-    __password_decoder = None
-
-    hostname = ""
-    model = ""
-    serial_number = ""
-    site_slug = ""
-    role = ""
-
-    interfaces = []
-
-    ip_address = ""
-    cred = {"username": "network-backup",
-            "password": 'gAAAAABkJWTLKA-pCESIgNea34_AQ_OhMapaKSKp24RZSyf_ei-T5JZX0dBW_TzfueuNopnqWFmduhuLDHr-sj4mLRGq5z8J4qDyaFomECh7iS0udKIEN1w='}
-    community_string = ""
-    error = ""
-
     def __init__(self, ip_address, username=None, password=None, community_string=None, site_slug=None, role=None,
                  logger=None):
+
+        self.__netbox = None
+        self.__netbox_url = None
+        self.__netbox_token = None
+        self.__netbox_device = None
+        self.__netbox_device_interface = None
+        self.__netbox_device_ip_address = None
+
+        self.__password_salt = None
+        self.__password_decoder = None
+
+        self.hostname = ""
+        self.model = ""
+        self.serial_number = ""
+        self.site_slug = ""
+        self.role = ""
+
+        self.interfaces = []
+
+        self.cred = {
+            "username": "",
+            "password": ""
+        }
+        self.community_string = ""
+        self.error = ""
+
         if logger:
             self.logger = logger
         else:
@@ -120,8 +122,12 @@ class NetworkDevice:
         if password:
             self.cred.update({"password": password})
 
+        if not self.cred["username"] and not self.cred["password"]:
+            self.cred = {"username": "network-backup",
+                         "password": 'gAAAAABkJWTLKA-pCESIgNea34_AQ_OhMapaKSKp24RZSyf_ei-T5JZX0dBW_TzfueuNopnqWFmduhuLDHr-sj4mLRGq5z8J4qDyaFomECh7iS0udKIEN1w='}
+
         # Ели все необходимые параметры заданы
-        if allowed_ip and self.cred["username"] and self.cred["password"]:
+        if allowed_ip:
             ssh_options = '-oKexAlgorithms=+diffie-hellman-group-exchange-sha1 -oStrictHostKeyChecking=accept-new'
 
             self.logger.info(f'Connecting via ssh: {self.cred["username"]}@{self.ip_address}')
