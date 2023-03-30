@@ -17,8 +17,8 @@ while True:
                 error = ''
                 oidType = 'SG300'
                 vlan_output, error = \
-                    snmpwalk('1.3.6.1.4.1.9.6.1.101.48.70', 'public', ip_address, 'iFACE-DESC')
-                print(vlan_output)
+                    snmpwalk('1.3.6.1.4.1.9.6.1.101.48.70', 'public', ip_address, 'Debug')
+                print('\n'.join(vlan_output))
         print(oidType)
     except Exception as e:
         traceback.print_exc()
