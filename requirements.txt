@@ -1,0 +1,5 @@
+prettytable
+wexpect
+pynetbox
+netaddr
+requests
