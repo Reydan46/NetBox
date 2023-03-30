@@ -13,8 +13,7 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False):
     try:
         process = ["snmpwalk", "-v", "2c", "-c", community_string, *(["-Ox"] if hex else []), ip_address, oid]
         # Помещаем результат команды snmpwalk в переменную
-        result = subprocess.run(process, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-                                text=True)
+        result = subprocess.run(process, capture_output=True, text=True)
 
         # Обработка ошибок
         if result.returncode != 0:
