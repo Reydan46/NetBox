@@ -15,7 +15,7 @@ To work you need:
 * **pass** - Pass device when checking (any value means pass)
 * **ip device** - IP address of the device
 * **username** - SSH login username (network-backup is used if absent)
-* **enc_password** - SSH password of the user (network-backup password is used if absent)
+* **enc_password** - Encrypted SSH password of the user (network-backup password is used if absent)
 * **allowed ip** - IP-address which will have access to use SNMP
 * **community** - SNMP Community String
 * **site slug** - The site name for the device in the NetBox
@@ -23,14 +23,14 @@ To work you need:
 
 ---
 
-1. How to get SALT to encrypt passwords
+1. How to get SALT to encrypt passwords (NETBOX_PASSWORD_SALT)
 
 ```
 from cryptography.fernet import Fernet
 key = Fernet.generate_key()
 ```
 
-2. How to get an encrypted password to use in devices.csv
+2. How to get an encrypted password to use in devices.csv (enc_password)
 
 ``` 
 from cryptography.fernet import Fernet
