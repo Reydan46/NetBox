@@ -6,8 +6,7 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False):
     out = []
     try:
         process = ["snmpwalk", "-v", "2c", "-c", community_string, *(["-Ox"] if hex else []), ip_address, oid]
-        result = subprocess.run(process, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-                                text=True)
+        result = subprocess.run(process, capture_output=True, text=True)
 
         if result.returncode != 0:
             return [], f'Fail SNMP (oid {oid})! Return code: {result.returncode}'
