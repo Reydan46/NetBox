@@ -1,4 +1,4 @@
-**Utility for polling network devices via SNMP and filling the database in NetBox**
+# Utility for polling network devices via SNMP and filling the database in NetBox
 -
 ---
 
@@ -23,14 +23,14 @@ To work you need:
 
 ---
 
-1. How to get SALT to encrypt passwords (NETBOX_PASSWORD_SALT)
+## How to get SALT to encrypt passwords (NETBOX_PASSWORD_SALT)
 
 ```
 from cryptography.fernet import Fernet
 key = Fernet.generate_key()
 ```
 
-2. How to get an encrypted password to use in devices.csv (enc_password)
+## How to get an encrypted password to use in devices.csv (enc_password)
 
 ``` 
 from cryptography.fernet import Fernet
@@ -39,3 +39,11 @@ password_encoder = Fernet(__password_salt)
 password=b"SuperP@ssw0rd"
 encrypted_password = password_encoder.encrypt(password).decode('utf-8')
 ```
+
+## How to add a system environment variable using PowerShell:
+```
+[Environment]::SetEnvironmentVariable("NETBOX_URL", "VARIABLE_VALUE", "Machine")
+[Environment]::SetEnvironmentVariable("NETBOX_PASSWORD_SALT", "VARIABLE_VALUE", "Machine")
+[Environment]::SetEnvironmentVariable("NETBOX_TOKEN", "VARIABLE_VALUE", "Machine")
+```
+Replace "VARIABLE_VALUE" with the value you want to assign to the variable.
