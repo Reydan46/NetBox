@@ -1,9 +1,10 @@
+import os
 import wexpect as expect
 import pynetbox
 from netaddr import IPAddress
 from snmp import snmpwalk
-import requests
 import logging
+from cryptography.fernet import Fernet
 
 
 class Interface:
@@ -20,11 +21,14 @@ class Interface:
 
 class NetworkDevice:
     __netbox = None
-    __netbox_url = "http://ust-netbox/"
-    __netbox_token = '0123456789abcdef0123456789abcdef01234567'
+    __netbox_url = None
+    __netbox_token = None
     __netbox_device = None
     __netbox_device_interface = None
     __netbox_device_ip_address = None
+
+    __password_salt = None
+    __password_decoder = None
 
     hostname = ""
     model = ""
@@ -35,7 +39,8 @@ class NetworkDevice:
     interfaces = []
 
     ip_address = ""
-    cred = {"username": "", "password": ""}
+    cred = {"username": "network-backup",
+            "password": 'gAAAAABkJWTLKA-pCESIgNea34_AQ_OhMapaKSKp24RZSyf_ei-T5JZX0dBW_TzfueuNopnqWFmduhuLDHr-sj4mLRGq5z8J4qDyaFomECh7iS0udKIEN1w='}
     community_string = ""
     error = ""
 
@@ -59,6 +64,18 @@ class NetworkDevice:
         if role:
             self.role = role
 
+        self.__password_salt = os.environ.get('NETBOX_PASSWORD_SALT')
+        if not self.__password_salt:
+            self.error = 'Password SALT is empty!'
+            self.logger.error(self.error)
+            return
+        try:
+            self.__password_decoder = Fernet(self.__password_salt)
+        except Exception as e:
+            self.error = f'Could not initiate Password Decoder: {e}'
+            self.logger.error(self.error)
+            return
+
     def getModel(self):
         if self.model:
             return self.model
@@ -69,10 +86,23 @@ class NetworkDevice:
     def __iFACES2dict(iFaces):
         return {interface: value for interface, value in iFaces}
 
+    def getPassword(self, password):
+        return self.__password_decoder.decrypt(password).decode('utf-8')
+
     def __connect_to_netbox(self):
         self.error = ''
         try:
             if not self.__netbox:
+                self.__netbox_url = os.environ.get('NETBOX_URL')
+                if not self.__netbox_url:
+                    self.error = 'NetBox URL is empty!'
+                    self.logger.error(self.error)
+                    return
+                self.__netbox_token = os.environ.get('NETBOX_TOKEN')
+                if not self.__netbox_token:
+                    self.error = 'NetBox TOKEN is empty!'
+                    self.logger.error(self.error)
+                    return
                 self.logger.debug('Connect to NetBox')
                 self.__netbox = pynetbox.api(url=self.__netbox_url, token=self.__netbox_token)
         except:
@@ -106,7 +136,7 @@ class NetworkDevice:
                         count += 1
                         index = ssh.expect(['assword:', 'ame:', 'ogin:', 'ser:'])
                         if index == 0:
-                            ssh.sendline(self.cred["password"])
+                            ssh.sendline(self.getPassword(self.cred["password"]))
                         else:  # elif index in [1, 2, 3]:
                             ssh.sendline(self.cred["username"])
 
@@ -151,8 +181,8 @@ class NetworkDevice:
                 except Exception as e:
                     if 'Connection timed out' in ssh.before:
                         self.error = 'Connection timed out'
-                    elif 'Timeout exceeded' in str(e):
-                        self.error = 'Timeout data wait'
+                    # elif 'Timeout exceeded' in str(e):
+                    #     self.error = 'Timeout data wait'
                     elif 'Permission denied' in ssh.before:
                         self.error = 'Permission denied (wrong username?)'
                     elif 'User Name:' in ssh.before:

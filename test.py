@@ -3,7 +3,7 @@ import logging
 import csv
 from prettytable import PrettyTable
 
-from snmp import snmpwalk, snmpwalk0
+from snmp import snmpwalk
 
 logger = logging.getLogger('NetBox')
 logger.setLevel(logging.DEBUG)
@@ -18,9 +18,19 @@ ip_address = '10.10.3.11'  # SG
 
 username = 'network-backup'
 password = 'ofsF|P%*{L7}yAhv8pKl'
-allowed_ip = '10.10.5.37'
+
 community_string = 'public'
 site_slug = 'ust'
+
+ip_address = '10.13.3.100'
+ip_address = '10.13.3.3'
+username = 'network-backup'
+password = 'gAAAAABkJWTLKA-pCESIgNea34_AQ_OhMapaKSKp24RZSyf_ei-T5JZX0dBW_TzfueuNopnqWFmduhuLDHr-sj4mLRGq5z8J4qDyaFomECh7iS0udKIEN1w='
+allowed_ip = '10.10.7.13'
+#allowed_ip = '10.10.5.37'
+community_string = 'public'
+site_slug = 'chb'
+role = 'Aggregation switch'
 
 # Hostname
 oid = "1.3.6.1.2.1.1.5.0"
@@ -79,6 +89,8 @@ snmpwalk(oid, community_string, ip_address, 'iFACE-INT')
 int_index = '10101'
 oid = f"1.3.6.1.2.1.2.2.1.2.{int_index}"
 snmpwalk(oid, community_string, ip_address)
+
+
 
 (hostname, model, serial_number), error_message = get_device_info(community_string, ip_address)
 site_slug = 'ust'
