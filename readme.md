@@ -23,27 +23,28 @@ To work you need:
 
 ---
 
-## How to get SALT to encrypt passwords (NETBOX_PASSWORD_SALT)
 
-```
-from cryptography.fernet import Fernet
-key = Fernet.generate_key()
-```
-
-## How to get an encrypted password to use in devices.csv (enc_password)
-
-``` 
-from cryptography.fernet import Fernet
-password_salt = os.environ.get('NETBOX_PASSWORD_SALT')
-password_encoder = Fernet(__password_salt)
-password=b"SuperP@ssw0rd"
-encrypted_password = password_encoder.encrypt(password).decode('utf-8')
-```
-
-## How to add a system environment variable using PowerShell:
+## How to add a system environment variable using PowerShell as Administrator:
 ```
 [Environment]::SetEnvironmentVariable("NETBOX_URL", "VARIABLE_VALUE", "Machine")
 [Environment]::SetEnvironmentVariable("NETBOX_PASSWORD_SALT", "VARIABLE_VALUE", "Machine")
 [Environment]::SetEnvironmentVariable("NETBOX_TOKEN", "VARIABLE_VALUE", "Machine")
 ```
 Replace "VARIABLE_VALUE" with the value you want to assign to the variable.
+
+## How to get SALT to encrypt passwords (NETBOX_PASSWORD_SALT)
+```
+from cryptography.fernet import Fernet
+key = Fernet.generate_key()
+print(key)
+```
+
+## How to get an encrypted password to use in devices.csv (enc_password)
+``` 
+from cryptography.fernet import Fernet
+password_salt = os.environ.get('NETBOX_PASSWORD_SALT')
+password_encoder = Fernet(__password_salt)
+password=b"SuperP@ssw0rd"
+encrypted_password = password_encoder.encrypt(password).decode('utf-8')
+print(encrypted_password)
+```
