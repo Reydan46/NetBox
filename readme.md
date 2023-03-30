@@ -15,9 +15,9 @@ To work you need:
 * **pass** - Pass device when checking (any value means pass)
 * **ip device** - IP address of the device
 * **username** - SSH login username (network-backup is used if absent)
-* **password** - SSH password of the user (network-backup password is used if absent)
+* **enc_password** - SSH password of the user (network-backup password is used if absent)
 * **allowed ip** - IP-address which will have access to use SNMP
-* **community** - SNMP Comunniti String
+* **community** - SNMP Community String
 * **site slug** - The site name for the device in the NetBox
 * **role** - The role for the device in the NetBox
 

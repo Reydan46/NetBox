@@ -32,22 +32,23 @@ devices_file = open('devices.csv', newline='')
 devices_reader = csv.DictReader(devices_file, delimiter=';')
 for csv_device in devices_reader:
     if csv_device['pass']:
-        logger.info(f"Passed device IP: {csv_device['ip device']}\n"+'#' * 120)
+        logger.info(f"Passed device IP: {csv_device['ip device']}\n" + '#' * 120)
         continue
     logger.info(f"Processing device IP: {csv_device['ip device']}")
     network_device = NetworkDevice(
         ip_address=csv_device['ip device'],
         username=csv_device['username'],
-        password=csv_device['password'],
+        password=csv_device['enc_password'],
         community_string=csv_device['community'],
         site_slug=csv_device['site slug'],
         role=csv_device['role'],
         logger=logger
     )
-    network_device.ConfigureInNetBox(allowed_ip=csv_device['allowed ip'])
+    if not network_device.error:
+        network_device.ConfigureInNetBox(allowed_ip=csv_device['allowed ip'])
     if network_device.error:
         devices_with_error += [network_device]
-    logger.info('End processing device\n'+'#' * 120)
+    logger.info('End processing device\n' + '#' * 120)
 
 # Если были ошибки с устройствами - выводим
 if devices_with_error:
