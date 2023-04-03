@@ -40,7 +40,7 @@ class SNMPDevice:
         value = self.getValue(snmpwalk("1.3.6.1.2.1.1.5.0", self.community_string, self.ip_address, 'DotSplit'))
 
         if self.error:
-            return
+            return None, self.error
 
         self.hostname = value[0]
         return self.hostname, self.error
@@ -49,7 +49,7 @@ class SNMPDevice:
         value = self.getValue(snmpwalk("1.3.6.1.2.1.1.1.0", self.community_string, self.ip_address))
 
         if self.error:
-            return
+            return None, self.error
 
         re_out = re.search(r'(\b[A-Za-z][\w]{3,}-[\w]{2,6}\b)', value[0])
         self.model = re_out.group(1) if re_out else ''
@@ -57,7 +57,7 @@ class SNMPDevice:
         if not self.model:
             value = self.getValue(snmpwalk("1.3.6.1.2.1.47.1.1.1.1.13", self.community_string, self.ip_address))
             if self.error:
-                return
+                return None, self.error
             self.model = next((i for i in value if i), '')
 
         return self.model, self.error
@@ -66,7 +66,7 @@ class SNMPDevice:
         value = self.getValue(snmpwalk("1.3.6.1.2.1.47.1.1.1.1.11", self.community_string, self.ip_address))
 
         if self.error:
-            return
+            return None, self.error
 
         self.hostname = value[0]
         return self.hostname, self.error

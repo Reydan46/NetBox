@@ -247,7 +247,6 @@ class NetworkDevice:
                 self.model, self.error = self.__snmp.getModel()
                 model_out, self.error = snmpwalk("1.3.6.1.2.1.47.1.1.1.1.13", self.community_string, self.ip_address)
                 if not self.error:
-                    self.model = [i for i in model_out if i][0]
                     self.logger.info(f'Model: {self.model}')
                 else:
                     self.logger.error(f'Error get model: {self.error}')
