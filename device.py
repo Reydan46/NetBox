@@ -22,10 +22,10 @@ class Interface:
 class NetworkDevice:
     def __init__(self, ip_address, username=None, password=None, community_string=None, site_slug=None, role=None,
                  logger=None):
+        # Проверяем наличие логгера
         if logger:
             self.logger = logger
         else:
-            # Объявляем logger, если таковой не задан
             self.logger = logging.getLogger('NetworkDevice')
 
         self.__snmp = None
@@ -55,6 +55,7 @@ class NetworkDevice:
         self.community_string = ""
         self.error = ""
 
+        # Сохраняем не None значения атрибутов
         self.ip_address = ip_address
         if username:
             self.cred.update({"username": username})
@@ -63,12 +64,12 @@ class NetworkDevice:
         if community_string:
             self.community_string = community_string
             self.__create_SNMPDevice()
-
         if site_slug:
             self.site_slug = site_slug
         if role:
             self.role = role
 
+        # Получаем переменную окружения для расшифровки пароля
         self.__password_salt = os.environ.get('NETBOX_PASSWORD_SALT')
         if not self.__password_salt:
             self.error = 'Password SALT is empty!'
