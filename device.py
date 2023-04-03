@@ -2,7 +2,7 @@ import os
 import wexpect as expect
 import pynetbox
 from netaddr import IPAddress
-from snmp import snmpwalk
+from snmp import snmpwalk, SNMPDevice
 import logging
 from cryptography.fernet import Fernet
 
@@ -22,6 +22,13 @@ class Interface:
 class NetworkDevice:
     def __init__(self, ip_address, username=None, password=None, community_string=None, site_slug=None, role=None,
                  logger=None):
+        if logger:
+            self.logger = logger
+        else:
+            # Объявляем logger, если таковой не задан
+            self.logger = logging.getLogger('NetworkDevice')
+
+        self.__snmp = None
 
         self.__netbox = None
         self.__netbox_url = None
@@ -48,12 +55,6 @@ class NetworkDevice:
         self.community_string = ""
         self.error = ""
 
-        if logger:
-            self.logger = logger
-        else:
-            # Объявляем logger, если таковой не задан
-            self.logger = logging.getLogger('NetBox')
-
         self.ip_address = ip_address
         if username:
             self.cred.update({"username": username})
@@ -61,6 +62,8 @@ class NetworkDevice:
             self.cred.update({"password": password})
         if community_string:
             self.community_string = community_string
+            self.__create_SNMPDevice()
+
         if site_slug:
             self.site_slug = site_slug
         if role:
@@ -84,6 +87,20 @@ class NetworkDevice:
         else:
             return "Undefined"
 
+    def __create_SNMPDevice(self):
+        if not self.__snmp:
+            if not self.community_string:
+                self.error = 'Community String is empty!'
+                self.logger.error(self.error)
+                return None
+            self.logger.debug('Create SNMP Device')
+            self.__snmp = SNMPDevice(
+                community_string=self.community_string,
+                ip_address=self.ip_address,
+                logger=self.logger
+            )
+        return self.__snmp
+
     @staticmethod
     def __iFACES2dict(iFaces):
         return {interface: value for interface, value in iFaces}
@@ -99,12 +116,12 @@ class NetworkDevice:
                 if not self.__netbox_url:
                     self.error = 'NetBox URL is empty!'
                     self.logger.error(self.error)
-                    return
+                    return None
                 self.__netbox_token = os.environ.get('NETBOX_TOKEN')
                 if not self.__netbox_token:
                     self.error = 'NetBox TOKEN is empty!'
                     self.logger.error(self.error)
-                    return
+                    return None
                 self.logger.debug('Connect to NetBox')
                 self.__netbox = pynetbox.api(url=self.__netbox_url, token=self.__netbox_token)
         except:
@@ -218,14 +235,16 @@ class NetworkDevice:
 
         # Ели все необходимые параметры заданы
         if self.community_string:
-            hostname_out, self.error = snmpwalk("1.3.6.1.2.1.1.5.0", self.community_string, self.ip_address, 'DotSplit')
+            self.__create_SNMPDevice()
+
+            self.hostname, self.error = self.__snmp.getHostname()
             if not self.error:
-                self.hostname = [i for i in hostname_out if i][0]
                 self.logger.info(f'Hostname: {self.hostname}')
             else:
                 self.logger.error(f'Error get hostname: {self.error}')
 
             if not self.error:
+                self.model, self.error = self.__snmp.getModel()
                 model_out, self.error = snmpwalk("1.3.6.1.2.1.47.1.1.1.1.13", self.community_string, self.ip_address)
                 if not self.error:
                     self.model = [i for i in model_out if i][0]
@@ -327,6 +346,8 @@ class NetworkDevice:
             self.hostname = hostname
 
         if self.community_string and self.hostname and self.site_slug:
+            self.__create_SNMPDevice()
+
             # Создаём подключение к NetBox
             self.__connect_to_netbox()
             if self.error:
@@ -425,7 +446,10 @@ class NetworkDevice:
                     if str(self.__netbox_device.primary_ip4) != ip_with_prefix:
                         self.logger.info(f"Set primary IPv4: '{ip_with_prefix}'")
                         self.__netbox_device.primary_ip4 = primary_ipv4
-                        self.__netbox_device.save()
+                        try:
+                            self.__netbox_device.save()
+                        except Exception as e:
+                            self.error = str(e)
         else:
             if not self.community_string:
                 self.error = "Community String is empty!"
@@ -445,6 +469,8 @@ class NetworkDevice:
 
         # Устанавливаем значения классу, если заданы
         if self.community_string:
+            self.__create_SNMPDevice()
+
             sg = False
             vlan_output, self.error = \
                 snmpwalk('1.3.6.1.4.1.9.9.68.1.2.2.1.2', self.community_string, self.ip_address, 'iFACE-INT')
