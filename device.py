@@ -233,7 +233,7 @@ class NetworkDevice:
         if community_string:
             self.community_string = community_string
 
-        # Ели все необходимые параметры заданы
+        # Если все необходимые параметры заданы
         if self.community_string:
             self.__create_SNMPDevice()
 
