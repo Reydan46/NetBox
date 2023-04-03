@@ -245,17 +245,14 @@ class NetworkDevice:
 
             if not self.error:
                 self.model, self.error = self.__snmp.getModel()
-                model_out, self.error = snmpwalk("1.3.6.1.2.1.47.1.1.1.1.13", self.community_string, self.ip_address)
                 if not self.error:
                     self.logger.info(f'Model: {self.model}')
                 else:
                     self.logger.error(f'Error get model: {self.error}')
 
             if not self.error:
-                serial_number_out, self.error = snmpwalk("1.3.6.1.2.1.47.1.1.1.1.11", self.community_string,
-                                                         self.ip_address)
+                self.serial_number, self.error = self.__snmp.getSerialNumber()
                 if not self.error:
-                    self.serial_number = [i for i in serial_number_out if i][0]
                     self.logger.info(f'Serial Number: {self.serial_number}')
                 else:
                     self.logger.error(f'Error get serial number: {self.error}')
