@@ -3,7 +3,7 @@ import subprocess
 import logging
 from netaddr import IPAddress
 import traceback
-import oid
+import oid.general
 
 
 # Виртуальный IP интерфейс
@@ -246,7 +246,7 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False):
         regex_actions = {
             'Debug': RegexAction(
                 r'(.*)',
-                lambda re_out: re_out.group(1)
+                lambda re_out: 'iso.' + re_out.group(1)
             ),
             'DotSplit': RegexAction(
                 r'"([A-Za-z0-9\-_]+)(\.|\")',
@@ -285,18 +285,20 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False):
         # Выбор паттерна по параметру typeSNMP
         regex_action = regex_actions.get(typeSNMP, regex_actions['DEFAULT'])
 
-        # Построчно обрабатываем вывод snmpwalk
-        for lineSNMP in result.stdout.split('\niso'):
-            # Игнорируем пустые строки
-            if not lineSNMP:
-                continue
+        # Если вывод snmpwalk не пустой (больше чем 4 символа - 'iso.')
+        if len(result.stdout) > 4:
+            # Построчно обрабатываем вывод snmpwalk
+            for lineSNMP in result.stdout[4:].split('\niso.'):
+                # Игнорируем пустые строки
+                if not lineSNMP:
+                    continue
 
-            re_out = re.search(regex_action.pattern, lineSNMP)
-            # Игнорируем строки при НЕ нахождении паттерна
-            if re_out:
-                output = regex_action.action(re_out)
-                # Собираем результаты в список out
-                out += [output]
+                re_out = re.search(regex_action.pattern, lineSNMP)
+                # Игнорируем строки при НЕ нахождении паттерна
+                if re_out:
+                    output = regex_action.action(re_out)
+                    # Собираем результаты в список out
+                    out += [output]
 
         return out, ''
     except Exception as e:
