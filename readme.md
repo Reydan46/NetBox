@@ -1,17 +1,13 @@
 # Utility for polling network devices via SNMP and filling the database in NetBox
 
-
-
 To work you need:
 
 1. Create system variables:
-
 * **NETBOX_PASSWORD_SALT** - Key used to decrypt passwords (see below for how to generate them)
 * **NETBOX_URL** - Path to a NetBox instance
 * **NETBOX_TOKEN** - Token of access to the NetBox.
 
 2. Create devices.csv file (by template devices.template.csv), where:
-
 * **pass** - Pass device when checking (any value means pass)
 * **ip device** - IP address of the device
 * **username** - SSH login username (leave empty for `network-admin` credentials using)
@@ -21,6 +17,12 @@ To work you need:
 * **site slug** - The site name for the device in the NetBox
 * **role** - The role for the device in the NetBox
 
+3. Prepare the environment variables (See "How to" sections)  
+
+4. Add the required models to the `model.lists` file under the appropriate type. The model type determines which set of OIDs will be used.  
+```
+modelType:model1,model2,model3
+```
 ---
 
 

@@ -43,11 +43,11 @@ class SNMPDevice:
     def __model_lists_reader(self):
         file = open('model.lists', 'r').read()
         for line in file.split('\n'):
-            name, models = line.split(':')
+            modelType, models = line.split(':')
             models = [i for i in models.split(',') if i]
-            print('Name', name)
+            print('Type of model', modelType)
             print('Models', models)
-            match name:
+            match modelType:
                 case "cisco_catalyst":
                     self.cisco_catalyst = models
                 case "cisco_sg_300":
