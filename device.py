@@ -145,7 +145,7 @@ class NetworkDevice:
             self.cred = {"username": "network-backup",
                          "password": 'gAAAAABkJWTLKA-pCESIgNea34_AQ_OhMapaKSKp24RZSyf_ei-T5JZX0dBW_TzfueuNopnqWFmduhuLDHr-sj4mLRGq5z8J4qDyaFomECh7iS0udKIEN1w='}
 
-        # Ели все необходимые параметры заданы
+        # Если все необходимые параметры заданы
         if allowed_ip:
             ssh_options = '-oKexAlgorithms=+diffie-hellman-group-exchange-sha1 -oStrictHostKeyChecking=accept-new'
 
