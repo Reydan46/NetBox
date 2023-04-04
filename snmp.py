@@ -1,11 +1,32 @@
 import re
 import subprocess
 import logging
+from netaddr import IPAddress
 import traceback
+
+
+# Виртуальный IP интерфейс
+class SVI:
+    def __init__(self, ip_address, mask, index, description, MTU, MAC_address):
+        self.index = index
+        self.ip_address = ip_address
+        self.mask = mask
+        self.ip_with_prefix = f'{self.ip_address}/{IPAddress(self.mask).netmask_bits()}'
+        self.description = description
+        self.MTU = MTU
+        self.MAC_address = MAC_address
+
+    def __repr__(self):
+        return f'{self.index} - {self.ip_with_prefix} ({self.MAC_address}) - {self.description} - {self.MTU}'
 
 
 class SNMPDevice:
     def __init__(self, community_string, ip_address, model=None, logger=None):
+        self.zyxel = None
+        self.huawei = None
+        self.cisco_sg_350 = None
+        self.cisco_sg_300 = None
+        self.cisco_catalyst = None
         if logger:
             self.logger = logger
         else:
@@ -18,7 +39,25 @@ class SNMPDevice:
             self.model = model
         self.community_string = community_string
         self.ip_address = ip_address
-        self.hostname = ''
+
+    def __model_lists_reader(self):
+        file = open('model.lists', 'r').read()
+        for line in file.split('\n'):
+            name, models = line.split(':')
+            models = [i for i in models.split(',') if i]
+            print('Name', name)
+            print('Models', models)
+            match name:
+                case "cisco_catalyst":
+                    self.cisco_catalyst = models
+                case "cisco_sg_300":
+                    self.cisco_sg_300 = models
+                case "cisco_sg_350":
+                    self.cisco_sg_350 = models
+                case "huawei":
+                    self.huawei = models
+                case "zyxel":
+                    self.zyxel = models
 
     def getValue(self, action):
         self.error = ''
@@ -42,8 +81,7 @@ class SNMPDevice:
         if self.error:
             return None, self.error
 
-        self.hostname = value[0]
-        return self.hostname, self.error
+        return value[0], self.error
 
     def getModel(self):
         value = self.getValue(snmpwalk("1.3.6.1.2.1.1.1.0", self.community_string, self.ip_address))
@@ -68,8 +106,86 @@ class SNMPDevice:
         if self.error:
             return None, self.error
 
-        self.hostname = value[0]
-        return self.hostname, self.error
+        return value[0], self.error
+
+    def getSVIs(self):
+        ip_addresses = self.getValue(snmpwalk("1.3.6.1.2.1.4.20.1.1", self.community_string, self.ip_address, 'IP'))
+        if self.error:
+            return None, self.error
+        masks = self.getValue(snmpwalk("1.3.6.1.2.1.4.20.1.3", self.community_string, self.ip_address, 'IP'))
+        if self.error:
+            return None, self.error
+        indexes = self.getValue(snmpwalk("1.3.6.1.2.1.4.20.1.2", self.community_string, self.ip_address, 'INT'))
+        if self.error:
+            return None, self.error
+        SVIs = []
+        for i, index in enumerate(indexes):
+            if masks[i] == '0.0.0.0':
+                continue
+
+            description, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.2.{index}", self.community_string,
+                                               self.ip_address)
+            if self.error:
+                return
+            MTU, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.4.{index}", self.community_string,
+                                       self.ip_address, 'INT')
+            if self.error:
+                return
+            MAC_address, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.6.{index}", self.community_string,
+                                               self.ip_address, 'MAC', hex=True)
+            if self.error:
+                return
+
+            SVIs += [SVI(
+                ip_address=ip_addresses[i],
+                mask=masks[i],
+                index=index,
+                description=description[0],
+                MTU=MTU[0],
+                MAC_address=MAC_address[0]
+            )]
+        return SVIs, self.error
+
+    def getInterfaces(self):
+        self.error = ''
+
+        if not self.model:
+            self.error = 'Model is empty!'
+            self.logger.error(self.error)
+            return
+
+        result = []
+
+        self.__model_lists_reader()
+
+        if self.model in self.cisco_catalyst:
+            result = self.getInterfaces_cisco_catalyst()
+        elif self.model in self.cisco_sg_300:
+            result = self.getInterfaces_cisco_sg_300()
+        elif self.model in self.cisco_sg_350:
+            result = self.getInterfaces_cisco_sg_350()
+        elif self.model in self.huawei:
+            result = self.getInterfaces_huawei()
+        elif self.model in self.zyxel:
+            result = self.getInterfaces_zyxel()
+        else:
+            self.error = f'Model {self.model} is not found in getInterfaces!'
+        return result, self.error
+
+    def getInterfaces_cisco_catalyst(self):
+        return []
+
+    def getInterfaces_cisco_sg_300(self):
+        return []
+
+    def getInterfaces_cisco_sg_350(self):
+        return []
+
+    def getInterfaces_huawei(self):
+        return []
+
+    def getInterfaces_zyxel(self):
+        return []
 
 
 # Класс для группировки регулярного выражения и формата его выводимого результата
@@ -80,6 +196,7 @@ class RegexAction:
 
 
 def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False):
+    # snmpwalk -v 2c -c public -Ox 10.10.3.13 1.3.6.1.2.1.47.1.1.1.1.11
     out = []  # список для хранения результатов
     try:
         process = ["snmpwalk", "-v", "2c", "-c", community_string, *(["-Ox"] if hex else []), ip_address,

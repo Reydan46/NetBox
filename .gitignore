@@ -2,5 +2,5 @@
 /NetBox.log
 /.idea/
 /__pycache__
-/trunk.txt
-/_test.py
+/*.txt
+/_test*.py

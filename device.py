@@ -1,7 +1,8 @@
 import os
 import wexpect as expect
 import pynetbox
-from netaddr import IPAddress
+from pynetbox.core import api
+from pynetbox.models import dcim
 from snmp import snmpwalk, SNMPDevice
 import logging
 from cryptography.fernet import Fernet
@@ -28,12 +29,12 @@ class NetworkDevice:
         else:
             self.logger = logging.getLogger('NetworkDevice')
 
-        self.__snmp = None
+        self.__snmp: SNMPDevice = None
 
-        self.__netbox = None
+        self.__netbox: pynetbox.core.api.Api = None
         self.__netbox_url = None
         self.__netbox_token = None
-        self.__netbox_device = None
+        self.__netbox_device: pynetbox.models.dcim.Devices = None
         self.__netbox_device_interface = None
         self.__netbox_device_ip_address = None
 
@@ -362,86 +363,53 @@ class NetworkDevice:
                 self.error = 'Device not found in NetBox!'
                 return
 
-            ip_addresses, self.error = snmpwalk("1.3.6.1.2.1.4.20.1.1", self.community_string, self.ip_address, 'IP')
-            if self.error:
-                return
-
-            masks, self.error = snmpwalk("1.3.6.1.2.1.4.20.1.3", self.community_string, self.ip_address, 'IP')
-            if self.error:
-                return
-
-            indexes, self.error = snmpwalk("1.3.6.1.2.1.4.20.1.2", self.community_string, self.ip_address, 'INT')
+            SVIs, self.error = self.__snmp.getSVIs()
             if self.error:
                 return
 
             # Create IP address objects and assign them to interfaces in NetBox
-            for i, ip in enumerate(ip_addresses):
-                index = indexes[i]
-                mask = masks[i]
-
-                if mask == '0.0.0.0':
-                    continue
-
-                description, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.2.{index}", self.community_string,
-                                                   self.ip_address)
-                if self.error:
-                    return
-                description = description[0]
-
-                MTU, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.4.{index}", self.community_string,
-                                           self.ip_address, 'INT')
-                if self.error:
-                    return
-                MTU = MTU[0]
-
-                MAC_address, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.6.{index}", self.community_string,
-                                                   self.ip_address, 'MAC', hex=True)
-                if self.error:
-                    return
-                MAC_address = MAC_address[0]
+            for SVI in SVIs:
 
                 # Check if the interface already exists in NetBox
-                self.__netbox_device_interface = self.__netbox.dcim.interfaces.get(name=description,
+                self.__netbox_device_interface = self.__netbox.dcim.interfaces.get(name=SVI.description,
                                                                                    device=self.__netbox_device.name)
                 if self.__netbox_device_interface:
                     self.logger.info(
-                        f"Interface '{description}' already exists in NetBox (skipping creation)")
+                        f"Interface '{SVI.description}' already exists in NetBox (skipping creation)")
                 else:
-                    self.logger.info(f"Interface '{description}' creating in NetBox!")
+                    self.logger.info(f"Interface '{SVI.description}' creating in NetBox!")
                     self.__netbox_device_interface = self.__netbox.dcim.interfaces.create(
-                        name=description,
+                        name=SVI.description,
                         device=self.__netbox_device.id,
                         type="virtual",
-                        mtu=MTU,
-                        mac_address=MAC_address
+                        mtu=SVI.MTU,
+                        mac_address=SVI.MAC_address
                     )
 
-                ip_with_prefix = f'{self.ip_address}/{IPAddress(mask).netmask_bits()}'
-
-                self.logger.info(f'IP Address: {ip}')
-                self.logger.info(f'Subnet Mask: {mask}')
-                self.logger.info(f'IP Address with Prefix: {ip_with_prefix}')
+                self.logger.info(f'IP Address: {SVI.ip_address}')
+                self.logger.info(f'Subnet Mask: {SVI.mask}')
+                self.logger.info(f'IP Address with Prefix: {SVI.ip_with_prefix}')
 
                 # Check if the IP address already exists in NetBox
                 self.__netbox_device_ip_address = self.__netbox.ipam.ip_addresses.get(
-                    address=ip_with_prefix)
+                    address=SVI.ip_with_prefix)
                 if self.__netbox_device_ip_address:
                     self.logger.info(
-                        f"IP address '{ip_with_prefix}' already exists in NetBox (skipping creation)")
+                        f"IP address '{SVI.ip_with_prefix}' already exists in NetBox (skipping creation)")
                 else:
-                    self.logger.info(f"IP address '{ip_with_prefix}' creating in NetBox!")
+                    self.logger.info(f"IP address '{SVI.ip_with_prefix}' creating in NetBox!")
                     # Create the IP address object in NetBox
                     self.__netbox_device_ip_address = self.__netbox.ipam.ip_addresses.create(
-                        address=ip_with_prefix,
+                        address=SVI.ip_with_prefix,
                         status='active',
                         assigned_object_type="dcim.interface",
                         assigned_object_id=self.__netbox_device_interface.id,
                     )
 
-                if ip == self.ip_address:
-                    primary_ipv4 = {"address": ip_with_prefix}
-                    if str(self.__netbox_device.primary_ip4) != ip_with_prefix:
-                        self.logger.info(f"Set primary IPv4: '{ip_with_prefix}'")
+                if SVI.ip_address == self.ip_address:
+                    primary_ipv4 = {"address": SVI.ip_with_prefix}
+                    if str(self.__netbox_device.primary_ip4) != SVI.ip_with_prefix:
+                        self.logger.info(f"Set primary IPv4: '{SVI.ip_with_prefix}'")
                         self.__netbox_device.primary_ip4 = primary_ipv4
                         try:
                             self.__netbox_device.save()
