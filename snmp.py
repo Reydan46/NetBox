@@ -3,7 +3,7 @@ import subprocess
 import logging
 from netaddr import IPAddress
 import traceback
-from oid import oid_general
+import oid
 
 
 # Виртуальный IP интерфейс
@@ -21,6 +21,27 @@ class SVI:
         return f'{self.index} - {self.ip_with_prefix} ({self.MAC_address}) - {self.description} - {self.MTU}'
 
 
+# Физический интерфейс
+class Interface:
+    def __init__(self, index, vlan_id, name, mode=None, mtu=None, mac_address=None, desc=None):
+        self.index = index
+        self.vlan_id = vlan_id
+        self.name = name
+        self.mode = 'access'  # set mode to 'access' by default
+        if mode:
+            self.mode = mode
+        self.mtu = 1500
+        if mtu:
+            self.mtu = mtu
+        self.mac_address = ''
+        if mac_address:
+            self.mac_address = mac_address
+        self.desc = ''
+        if desc:
+            self.desc = desc
+        self.object_interface_netbox = None
+
+
 class SNMPDevice:
     def __init__(self, community_string, ip_address, model=None, logger=None):
         if logger:
@@ -29,11 +50,11 @@ class SNMPDevice:
             # Объявляем logger, если таковой не задан
             self.logger = logging.getLogger('SNMPDevice')
 
-        self.zyxel = []
-        self.huawei = []
-        self.cisco_sg_350 = []
-        self.cisco_sg_300 = []
-        self.cisco_catalyst = []
+        self.model_zyxel = []
+        self.model_huawei = []
+        self.model_cisco_sg_350 = []
+        self.model_cisco_sg_300 = []
+        self.model_cisco_catalyst = []
 
         self.error = ''
         self.model = ''
@@ -45,11 +66,11 @@ class SNMPDevice:
     def __model_lists_reader(self):
         self.logger.info('Read models from file')
 
-        self.zyxel = []
-        self.huawei = []
-        self.cisco_sg_350 = []
-        self.cisco_sg_300 = []
-        self.cisco_catalyst = []
+        self.model_zyxel = []
+        self.model_huawei = []
+        self.model_cisco_sg_350 = []
+        self.model_cisco_sg_300 = []
+        self.model_cisco_catalyst = []
 
         file = open('model.lists', 'r').read()
         for line in file.split('\n'):
@@ -57,15 +78,15 @@ class SNMPDevice:
             models = [i for i in models.split(',') if i]
             match modelType:
                 case "cisco_catalyst":
-                    self.cisco_catalyst = models
+                    self.model_cisco_catalyst = models
                 case "cisco_sg_300":
-                    self.cisco_sg_300 = models
+                    self.model_cisco_sg_300 = models
                 case "cisco_sg_350":
-                    self.cisco_sg_350 = models
+                    self.model_cisco_sg_350 = models
                 case "huawei":
-                    self.huawei = models
+                    self.model_huawei = models
                 case "zyxel":
-                    self.zyxel = models
+                    self.model_zyxel = models
 
     def getValue(self, action):
         self.error = ''
@@ -84,7 +105,7 @@ class SNMPDevice:
         return value
 
     def getHostname(self):
-        value = self.getValue(snmpwalk(oid_general.hostname, self.community_string, self.ip_address, 'DotSplit'))
+        value = self.getValue(snmpwalk(oid.general.hostname, self.community_string, self.ip_address, 'DotSplit'))
 
         if self.error:
             return None, self.error
@@ -92,7 +113,7 @@ class SNMPDevice:
         return value[0], self.error
 
     def getModel(self):
-        value = self.getValue(snmpwalk(oid_general.model, self.community_string, self.ip_address))
+        value = self.getValue(snmpwalk(oid.general.model, self.community_string, self.ip_address))
 
         if self.error:
             return None, self.error
@@ -101,7 +122,7 @@ class SNMPDevice:
         self.model = re_out.group(1) if re_out else ''
 
         if not self.model:
-            value = self.getValue(snmpwalk(oid_general.alt_model, self.community_string, self.ip_address))
+            value = self.getValue(snmpwalk(oid.general.alt_model, self.community_string, self.ip_address))
             if self.error:
                 return None, self.error
             self.model = next((i for i in value if i), '')
@@ -109,7 +130,7 @@ class SNMPDevice:
         return self.model, self.error
 
     def getSerialNumber(self):
-        value = self.getValue(snmpwalk(oid_general.serial_number, self.community_string, self.ip_address))
+        value = self.getValue(snmpwalk(oid.general.serial_number, self.community_string, self.ip_address))
 
         if self.error:
             return None, self.error
@@ -117,13 +138,14 @@ class SNMPDevice:
         return value[0], self.error
 
     def getSVIs(self):
-        indexes = self.getValue(snmpwalk(oid_general.svi_indexes, self.community_string, self.ip_address, 'INT'))
+        indexes = self.getValue(snmpwalk(oid.general.svi_indexes, self.community_string, self.ip_address, 'INT'))
         if self.error:
             return None, self.error
-        ip_addresses = self.getValue(snmpwalk(oid_general.svi_ip_addresses, self.community_string, self.ip_address, 'IP'))
+        ip_addresses = self.getValue(
+            snmpwalk(oid.general.svi_ip_addresses, self.community_string, self.ip_address, 'IP'))
         if self.error:
             return None, self.error
-        masks = self.getValue(snmpwalk(oid_general.svi_masks, self.community_string, self.ip_address, 'IP'))
+        masks = self.getValue(snmpwalk(oid.general.svi_masks, self.community_string, self.ip_address, 'IP'))
         if self.error:
             return None, self.error
         SVIs = []
@@ -131,15 +153,15 @@ class SNMPDevice:
             if masks[i] == '0.0.0.0':
                 continue
 
-            description, self.error = snmpwalk(f"{oid_general.svi_description}.{index}", self.community_string,
+            description, self.error = snmpwalk(f"{oid.general.svi_description}.{index}", self.community_string,
                                                self.ip_address)
             if self.error:
                 return
-            MTU, self.error = snmpwalk(f"{oid_general.svi_mtu}.{index}", self.community_string,
+            MTU, self.error = snmpwalk(f"{oid.general.svi_mtu}.{index}", self.community_string,
                                        self.ip_address, 'INT')
             if self.error:
                 return
-            MAC_address, self.error = snmpwalk(f"{oid_general.svi_mac_address}.{index}", self.community_string,
+            MAC_address, self.error = snmpwalk(f"{oid.general.svi_mac_address}.{index}", self.community_string,
                                                self.ip_address, 'MAC', hex=True)
             if self.error:
                 return
@@ -166,15 +188,15 @@ class SNMPDevice:
 
         self.__model_lists_reader()
 
-        if self.model in self.cisco_catalyst:
+        if self.model in self.model_cisco_catalyst:
             result = self.getInterfaces_cisco_catalyst()
-        elif self.model in self.cisco_sg_300:
+        elif self.model in self.model_cisco_sg_300:
             result = self.getInterfaces_cisco_sg_300()
-        elif self.model in self.cisco_sg_350:
+        elif self.model in self.model_cisco_sg_350:
             result = self.getInterfaces_cisco_sg_350()
-        elif self.model in self.huawei:
+        elif self.model in self.model_huawei:
             result = self.getInterfaces_huawei()
-        elif self.model in self.zyxel:
+        elif self.model in self.model_zyxel:
             result = self.getInterfaces_zyxel()
         else:
             self.error = f'Model {self.model} is not found in getInterfaces!'

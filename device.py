@@ -9,14 +9,22 @@ from cryptography.fernet import Fernet
 
 
 class Interface:
-    def __init__(self, index: str, vlan_id: int, name: str):
+    def __init__(self, index, vlan_id, name, mode=None, mtu=None, mac_address=None, desc=None):
         self.index = index
         self.vlan_id = vlan_id
-        self.mode = 'access'  # set mode to 'access' by default
         self.name = name
+        self.mode = 'access'  # set mode to 'access' by default
+        if mode:
+            self.mode = mode
         self.mtu = 1500
+        if mtu:
+            self.mtu = mtu
         self.mac_address = ''
+        if mac_address:
+            self.mac_address = mac_address
         self.desc = ''
+        if desc:
+            self.desc = desc
         self.object_interface_netbox = None
 
 
@@ -499,12 +507,14 @@ class NetworkDevice:
                     if self.error:
                         return
 
-                    interface_obj = Interface(int_index, vlan_dict[int_index], int_name[0])
-                    interface_obj.mtu = mtu_dict[int_index]
-                    interface_obj.mac_address = mac_dict[int_index]
-                    interface_obj.desc = desc_dict[int_index]
-
-                    self.interfaces.append(interface_obj)
+                    self.interfaces.append(Interface(
+                        index=int_index,
+                        vlan_id=vlan_dict[int_index],
+                        name=int_name[0],
+                        mtu=mtu_dict[int_index],
+                        mac_address=mac_dict[int_index],
+                        desc=desc_dict[int_index]
+                    ))
             self.logger.info(f'Found {len(self.interfaces)} interfaces')
         else:
             self.error = "Community String is empty!"
