@@ -3,6 +3,7 @@ import subprocess
 import logging
 from netaddr import IPAddress
 import traceback
+from oid import general
 
 
 # Виртуальный IP интерфейс
@@ -22,16 +23,17 @@ class SVI:
 
 class SNMPDevice:
     def __init__(self, community_string, ip_address, model=None, logger=None):
-        self.zyxel = None
-        self.huawei = None
-        self.cisco_sg_350 = None
-        self.cisco_sg_300 = None
-        self.cisco_catalyst = None
         if logger:
             self.logger = logger
         else:
             # Объявляем logger, если таковой не задан
             self.logger = logging.getLogger('SNMPDevice')
+
+        self.zyxel = []
+        self.huawei = []
+        self.cisco_sg_350 = []
+        self.cisco_sg_300 = []
+        self.cisco_catalyst = []
 
         self.error = ''
         self.model = ''
@@ -41,12 +43,18 @@ class SNMPDevice:
         self.ip_address = ip_address
 
     def __model_lists_reader(self):
+        self.logger.info('Read models from file')
+
+        self.zyxel = []
+        self.huawei = []
+        self.cisco_sg_350 = []
+        self.cisco_sg_300 = []
+        self.cisco_catalyst = []
+
         file = open('model.lists', 'r').read()
         for line in file.split('\n'):
             modelType, models = line.split(':')
             models = [i for i in models.split(',') if i]
-            print('Type of model', modelType)
-            print('Models', models)
             match modelType:
                 case "cisco_catalyst":
                     self.cisco_catalyst = models
@@ -76,7 +84,7 @@ class SNMPDevice:
         return value
 
     def getHostname(self):
-        value = self.getValue(snmpwalk("1.3.6.1.2.1.1.5.0", self.community_string, self.ip_address, 'DotSplit'))
+        value = self.getValue(snmpwalk(general.hostname, self.community_string, self.ip_address, 'DotSplit'))
 
         if self.error:
             return None, self.error
@@ -84,16 +92,16 @@ class SNMPDevice:
         return value[0], self.error
 
     def getModel(self):
-        value = self.getValue(snmpwalk("1.3.6.1.2.1.1.1.0", self.community_string, self.ip_address))
+        value = self.getValue(snmpwalk(general.model, self.community_string, self.ip_address))
 
         if self.error:
             return None, self.error
 
-        re_out = re.search(r'(\b[A-Za-z][\w]{3,}-[\w]{2,6}\b)', value[0])
+        re_out = re.search(r'(\b[A-Z][A-Z0-9]{3,}-[A-Z0-9]{2,6}\b)', value[0])
         self.model = re_out.group(1) if re_out else ''
 
         if not self.model:
-            value = self.getValue(snmpwalk("1.3.6.1.2.1.47.1.1.1.1.13", self.community_string, self.ip_address))
+            value = self.getValue(snmpwalk(general.alt_model, self.community_string, self.ip_address))
             if self.error:
                 return None, self.error
             self.model = next((i for i in value if i), '')
@@ -101,7 +109,7 @@ class SNMPDevice:
         return self.model, self.error
 
     def getSerialNumber(self):
-        value = self.getValue(snmpwalk("1.3.6.1.2.1.47.1.1.1.1.11", self.community_string, self.ip_address))
+        value = self.getValue(snmpwalk(general.serial_number, self.community_string, self.ip_address))
 
         if self.error:
             return None, self.error
@@ -109,13 +117,13 @@ class SNMPDevice:
         return value[0], self.error
 
     def getSVIs(self):
-        ip_addresses = self.getValue(snmpwalk("1.3.6.1.2.1.4.20.1.1", self.community_string, self.ip_address, 'IP'))
+        indexes = self.getValue(snmpwalk(general.svi_indexes, self.community_string, self.ip_address, 'INT'))
         if self.error:
             return None, self.error
-        masks = self.getValue(snmpwalk("1.3.6.1.2.1.4.20.1.3", self.community_string, self.ip_address, 'IP'))
+        ip_addresses = self.getValue(snmpwalk(general.svi_ip_addresses, self.community_string, self.ip_address, 'IP'))
         if self.error:
             return None, self.error
-        indexes = self.getValue(snmpwalk("1.3.6.1.2.1.4.20.1.2", self.community_string, self.ip_address, 'INT'))
+        masks = self.getValue(snmpwalk(general.svi_masks, self.community_string, self.ip_address, 'IP'))
         if self.error:
             return None, self.error
         SVIs = []
@@ -123,15 +131,15 @@ class SNMPDevice:
             if masks[i] == '0.0.0.0':
                 continue
 
-            description, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.2.{index}", self.community_string,
+            description, self.error = snmpwalk(f"{general.svi_description}.{index}", self.community_string,
                                                self.ip_address)
             if self.error:
                 return
-            MTU, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.4.{index}", self.community_string,
+            MTU, self.error = snmpwalk(f"{general.svi_mtu}.{index}", self.community_string,
                                        self.ip_address, 'INT')
             if self.error:
                 return
-            MAC_address, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.6.{index}", self.community_string,
+            MAC_address, self.error = snmpwalk(f"{general.svi_mac_address}.{index}", self.community_string,
                                                self.ip_address, 'MAC', hex=True)
             if self.error:
                 return
