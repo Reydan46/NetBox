@@ -5,6 +5,7 @@ from netaddr import IPAddress
 import traceback
 from collections import defaultdict
 import oid.general
+import oid.cisco_sg_300
 
 
 # Виртуальный IP интерфейс
@@ -206,22 +207,21 @@ class SNMPDevice:
 
     def getInterfaces(self):
         self.error = ''
-        interfaces = []
 
         if not self.model:
             self.error = 'Model is empty!'
             self.logger.error(self.error)
-            return interfaces
+            return
 
         if not self.ip_address:
             self.error = 'IP address is Empty!'
             self.logger.error(self.error)
-            return interfaces
+            return
 
         if not self.community_string:
             self.error = 'Community string is Empty!'
             self.logger.error(self.error)
-            return interfaces
+            return
 
         self.__model_lists_reader()
 
@@ -237,39 +237,42 @@ class SNMPDevice:
             interfaces = self.getInterfaces_zyxel()
         else:
             self.error = f'Model {self.model} is not found in getInterfaces!'
-            return interfaces, self.error
+            return
+
+        if self.error:
+            return
 
         int_name_output, self.error = \
             snmpwalk('1.3.6.1.2.1.2.2.1.2', self.community_string, self.ip_address, 'INDEX-DESC')
         if self.error:
-            return interfaces, self.error
+            return
         int_name_dict = self.__indexes_to_dict(int_name_output)
 
         mtu_output, self.error = \
             snmpwalk('1.3.6.1.2.1.2.2.1.4', self.community_string, self.ip_address, 'INDEX-INT')
         if self.error:
-            return interfaces, self.error
+            return
         mtu_dict = self.__indexes_to_dict(mtu_output)
 
         mac_output, self.error = \
             snmpwalk('1.3.6.1.2.1.2.2.1.6', self.community_string, self.ip_address, 'INDEX-MAC', hex=True)
         if self.error:
-            return interfaces, self.error
+            return
         mac_dict = self.__indexes_to_dict(mac_output)
 
         desc_output, self.error = \
             snmpwalk('1.3.6.1.2.1.31.1.1.1.18', self.community_string, self.ip_address, 'INDEX-DESC')
         if self.error:
-            return interfaces, self.error
+            return
         desc_dict = self.__indexes_to_dict(desc_output)
 
         for interface in interfaces:
             interface.name = int_name_dict[interface.index]
             interface.mtu = mtu_dict[interface.index]
-            interface.mac = mac_dict[interface.index]
+            interface.mac_address = mac_dict[interface.index]
             interface.desc = desc_dict[interface.index]
 
-        return interfaces, self.error
+        return interfaces
 
     def getInterfaces_cisco_catalyst(self):
         return []
@@ -277,31 +280,29 @@ class SNMPDevice:
     def getInterfaces_cisco_sg_300(self):
         interfaces = []
         mode_port_output, self.error = \
-            snmpwalk('1.3.6.1.4.1.9.6.1.101.48.22.1.1', self.community_string, self.ip_address, 'INDEX-INT')
+            snmpwalk(oid.cisco_sg_300.mode_port, self.community_string, self.ip_address, 'INDEX-INT')
 
         if self.error:
-            return interfaces
+            return
 
         mode_port_dict = self.__indexes_to_dict(mode_port_output)
 
         untag_port_output, self.error = \
-            snmpwalk('1.3.6.1.2.1.17.7.1.4.5.1', self.community_string, self.ip_address, 'INDEX-INT')
+            snmpwalk(oid.cisco_sg_300.untag_port, self.community_string, self.ip_address, 'INDEX-INT')
 
         if self.error:
-            return interfaces
+            return
 
         untag_port_dict = self.__indexes_to_dict(untag_port_output)
 
         hex_tag_port_output, error = \
-            snmpwalk('1.3.6.1.2.1.17.7.1.4.2.1.4', self.community_string, self.ip_address, 'INDEX-HEX')
+            snmpwalk(oid.cisco_sg_300.hex_tag_port, self.community_string, self.ip_address, 'INDEX-HEX')
 
         if self.error:
-            return interfaces
-
-        hex_tag_port_dict = self.__indexes_to_dict(hex_tag_port_output)
+            return
 
         tag_port_dict = defaultdict(list)
-        for vlan_id, hex_indexes in hex_tag_port_dict.items():
+        for vlan_id, hex_indexes in hex_tag_port_output:
             if vlan_id == '1':
                 continue
             for interface_index in self.__hex_to_binary_list(hex_indexes):
@@ -311,16 +312,19 @@ class SNMPDevice:
             if value == '2':
                 interfaces.append(Interface(
                     index=index,
-                    untagged=untag_port_dict[index],
+                    untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
                     mode='access',
                 ))
             elif value == '3':
                 interfaces.append(Interface(
                     index=index,
                     tagged=tag_port_dict[index],
-                    untagged=untag_port_dict[index],
+                    untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
                     mode='trunk',
                 ))
+                if interfaces[-1].tagged and interfaces[-1].untagged and \
+                        interfaces[-1].untagged in interfaces[-1].tagged:
+                    interfaces[-1].tagged.remove(interfaces[-1].untagged)
 
         return interfaces
 
@@ -342,13 +346,14 @@ class RegexAction:
 
 
 def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False):
-    # snmpwalk -v 2c -c public -Ox 10.10.3.13 1.3.6.1.2.1.47.1.1.1.1.11
+    # snmpwalk -v 2c -c public -Ox -On 10.10.3.13 1.3.6.1.2.1.47.1.1.1.1.11
     out = []  # список для хранения результатов
     try:
-        process = ["snmpwalk", "-v", "2c", "-c", community_string, *(["-Ox"] if hex else []), ip_address,
-                   *([oid] if oid else [])]
+        process = ["snmpwalk", "-v", "2c", "-c", community_string, "-On", *(["-Ox"] if hex else []),
+                   ip_address, *([oid] if oid else [])]
         # Помещаем результат команды snmpwalk в переменную
         result = subprocess.run(process, capture_output=True, text=True)
+        # result = subprocess.run(process, capture_output=True, text=True)
 
         # Обработка ошибок
         if result.returncode != 0:
@@ -362,7 +367,7 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False):
         regex_actions = {
             'Debug': RegexAction(
                 r'(.*)',
-                lambda re_out: 'iso.' + re_out.group(1)
+                lambda re_out: re_out.group(1)
             ),
             'DotSplit': RegexAction(
                 r'"([A-Za-z0-9\-_]+)(\.|\")',
@@ -406,10 +411,10 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False):
         # Выбор паттерна по параметру typeSNMP
         regex_action = regex_actions.get(typeSNMP, regex_actions['DEFAULT'])
 
-        # Если вывод snmpwalk не пустой (больше чем 4 символа - 'iso.')
-        if len(result.stdout) > 4:
+        # Если вывод snmpwalk не пустой (больше чем 1 символ - '.')
+        if len(result.stdout) > 0:
             # Построчно обрабатываем вывод snmpwalk
-            for lineSNMP in result.stdout[4:].split('\niso.'):
+            for lineSNMP in result.stdout[1:].split('\n.'):
                 # Игнорируем пустые строки
                 if not lineSNMP:
                     continue
