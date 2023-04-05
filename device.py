@@ -6,6 +6,8 @@ from pynetbox.models import dcim
 from snmp import snmpwalk, SNMPDevice
 import logging
 from cryptography.fernet import Fernet
+import jinja2
+import sys
 
 
 class Interface:
@@ -155,14 +157,26 @@ class NetworkDevice:
 
         # Если все необходимые параметры заданы
         if allowed_ip:
+            # Объявление окружения Jinja и загрузка шаблонов
+            env = jinja2.Environment(
+                loader=jinja2.FileSystemLoader('./templates'),
+            )
+            # Словарь шаблонов конфигурации ACL
+            ACL_TEMPLATE_FILENAMES = {
+                '2960': 'acl_cisco_cat.j2',
+                'SG': 'acl_cisco_sg.j2',
+            }
+            
             ssh_options = '-oKexAlgorithms=+diffie-hellman-group-exchange-sha1 -oStrictHostKeyChecking=accept-new'
 
+            # connect via SSH to the device
             self.logger.info(f'Connecting via ssh: {self.cred["username"]}@{self.ip_address}')
             ssh = expect.spawn(f'ssh {ssh_options} {self.cred["username"]}@{self.ip_address}', timeout=10)
 
-            # Если процесс не завершился мгновенно (если всё хорошо)
+            # Если подключение успешно
             if ssh.isalive():
                 try:
+                    # Аутентификация
                     count = 0
                     index = -1
                     while index != 0 and count < 5:
@@ -173,10 +187,10 @@ class NetworkDevice:
                         else:  # elif index in [1, 2, 3]:
                             ssh.sendline(self.cred["username"])
 
-                    # Wait for the command prompt to appear
                     ssh.expect('[>#]')
+                    ssh.logfile = sys.stdout.buffer
 
-                    # Determine the device type by running the 'show inventory' command
+                    # Определяем device_type по выводу 'show inventory'
                     ssh.sendline('show inventory')
                     ssh.expect('[>#]')
 
@@ -190,25 +204,30 @@ class NetworkDevice:
                             or 'SG350' in output_inventory:
                         device_type = 'SG'
 
-                    # Если модель устройства определена
-                    if device_type:
+                    # Если модель устройства определена, используем соответствующий шаблон
+                    if device_type in ACL_TEMPLATE_FILENAMES:
                         self.logger.info(f'Device type: {device_type}')
                         # Configure the access list using the appropriate commands for the device type
                         ssh.sendline('config terminal')
                         ssh.expect('[#]')
-
                         ssh.sendline('no logging con')
-                        if device_type == '2960':
-                            ssh.sendline('ip access-list standard ACL_SNMP')
-                            ssh.sendline(f'permit {allowed_ip}')
-                        elif device_type == 'SG':
-                            ssh.sendline(f'snmp-server community public ro {allowed_ip} view Default')
+                        ssh.expect('[#]')
+                        acl_template = env.get_template(ACL_TEMPLATE_FILENAMES[device_type])
+                        ssh.sendline(acl_template.render(allowed_ip=allowed_ip))
                     else:
                         self.error = f'Invalid device type: {device_type}'
 
                     ssh.expect('[#]')
                     ssh.sendline('end')
 
+                    # Сохранение
+                    ssh.sendline('wr')
+                    ssh.expect('#wr')
+                    checkStatus = ssh.expect(['#', '(Y/N)'])
+                    if checkStatus == 1:
+                        ssh.sendline('y')
+                        ssh.expect('#')
+                    
                     # Close the SSH session
                     ssh.close()
                 except Exception as e:

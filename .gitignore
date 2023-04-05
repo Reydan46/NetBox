@@ -4,3 +4,4 @@
 /__pycache__
 /*.txt
 /_test*.py
+*.pyc
