@@ -114,8 +114,8 @@ class NetworkDevice:
         return self.__snmp
 
     @staticmethod
-    def __iFACES2dict(iFaces):
-        return {interface: value for interface, value in iFaces}
+    def __indexes_to_dict(indexes):
+        return {interface: value for interface, value in indexes}
 
     def getPassword(self, password):
         return self.__password_decoder.decrypt(password).decode('utf-8')
@@ -465,44 +465,44 @@ class NetworkDevice:
 
             sg = False
             vlan_output, self.error = \
-                snmpwalk('1.3.6.1.4.1.9.9.68.1.2.2.1.2', self.community_string, self.ip_address, 'iFACE-INT')
+                snmpwalk('1.3.6.1.4.1.9.9.68.1.2.2.1.2', self.community_string, self.ip_address, 'INDEX-INT')
             if self.error:
                 self.error = ''
                 sg = True
                 vlan_output, self.error = \
-                    snmpwalk('1.3.6.1.4.1.9.6.1.101.48.62.1.1', self.community_string, self.ip_address, 'iFACE-INT')
+                    snmpwalk('1.3.6.1.4.1.9.6.1.101.48.62.1.1', self.community_string, self.ip_address, 'INDEX-INT')
 
             if self.error:
                 return
-            vlan_dict = self.__iFACES2dict(vlan_output)
+            vlan_dict = self.__indexes_to_dict(vlan_output)
 
             mtu_output, self.error = \
-                snmpwalk('1.3.6.1.2.1.2.2.1.4', self.community_string, self.ip_address, 'iFACE-INT')
+                snmpwalk('1.3.6.1.2.1.2.2.1.4', self.community_string, self.ip_address, 'INDEX-INT')
             if self.error:
                 return
-            mtu_dict = self.__iFACES2dict(mtu_output)
+            mtu_dict = self.__indexes_to_dict(mtu_output)
 
             mac_output, self.error = \
-                snmpwalk('1.3.6.1.2.1.2.2.1.6', self.community_string, self.ip_address, 'iFACE-MAC', hex=True)
+                snmpwalk('1.3.6.1.2.1.2.2.1.6', self.community_string, self.ip_address, 'INDEX-MAC', hex=True)
             if self.error:
                 return
-            mac_dict = self.__iFACES2dict(mac_output)
+            mac_dict = self.__indexes_to_dict(mac_output)
 
             desc_output, self.error = \
-                snmpwalk('1.3.6.1.2.1.31.1.1.1.18', self.community_string, self.ip_address, 'iFACE-DESC')
+                snmpwalk('1.3.6.1.2.1.31.1.1.1.18', self.community_string, self.ip_address, 'INDEX-DESC')
             if self.error:
                 return
-            desc_dict = self.__iFACES2dict(desc_output)
+            desc_dict = self.__indexes_to_dict(desc_output)
 
             if not sg:
                 int_mode_output, self.error = \
-                    snmpwalk('1.3.6.1.4.1.9.9.46.1.6.1.1.14', self.community_string, self.ip_address, 'iFACE-INT')
+                    snmpwalk('1.3.6.1.4.1.9.9.46.1.6.1.1.14', self.community_string, self.ip_address, 'INDEX-INT')
             else:
                 int_mode_output, self.error = \
-                    snmpwalk('1.3.6.1.4.1.9.6.1.101.48.65.1.1', self.community_string, self.ip_address, 'iFACE-INT')
+                    snmpwalk('1.3.6.1.4.1.9.6.1.101.48.65.1.1', self.community_string, self.ip_address, 'INDEX-INT')
             if self.error:
                 return
-            int_mode_dict = self.__iFACES2dict(int_mode_output)
+            int_mode_dict = self.__indexes_to_dict(int_mode_output)
 
             self.interfaces = []
             for int_index in int_mode_dict.keys():
