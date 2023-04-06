@@ -201,9 +201,9 @@ class NetworkDevice:
                         index = ssh.expect(['assword:', 'ame:', 'ogin:', 'ser:'])
                         if index == 0:
                             ssh.sendline(self.getPassword(self.cred["password"]))
-                        else:  # elif index in [1, 2, 3]:
+                        else:
                             ssh.sendline(self.cred["username"])
-
+                        
                     # Определение вендора
                     vendorCheck = ssh.expect(['#','>','Layer 2 Managed Switch','Zyxel'])
                     if vendorCheck == 0: # Cisco
@@ -223,7 +223,9 @@ class NetworkDevice:
                     elif vendorCheck == 1: # Huawei
                         device_type = 'Hui'
                     elif vendorCheck == 2 or vendorCheck == 3: # Zyxel
+                        device_type = 'Zyxel'
                         ssh.close()
+                        return device_type
 
                     # Конфигурация
                     if device_type in ACL_TEMPLATE_FILENAMES:
