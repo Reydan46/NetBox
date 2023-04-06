@@ -3,7 +3,6 @@ import os
 import sys
 
 import jinja2
-import pynetbox
 import wexpect as expect
 from cryptography.fernet import Fernet
 
@@ -15,13 +14,6 @@ class NetworkDevice:
             self.logger = logger
         else:
             self.logger = logging.getLogger('NetworkDevice')
-
-        self.__netbox: pynetbox.core.api.Api = None
-        self.__netbox_url = None
-        self.__netbox_token = None
-        self.__netbox_device: pynetbox.models.dcim.Devices = None
-        self.__netbox_device_interface = None
-        self.__netbox_device_ip_address = None
 
         self.__password_salt = None
         self.__password_decoder = None
@@ -89,29 +81,26 @@ class NetworkDevice:
             env = jinja2.Environment(
                 loader=jinja2.FileSystemLoader('./templates'),
             )
-            # Словарь шаблонов конфигурации ACL
-            ACL_TEMPLATE_FILENAMES = {
-                '2960': 'acl_cisco_cat.j2',
-                'SG': 'acl_cisco_sg.j2',
-                'Hui': 'acl_huawei.j2',
-            }
-            # Словарь команд входа в режим конфигурации
-            CONFIGURE_MODE_COMMANDS = {
-                '2960': 'conf t',
-                'SG': 'conf t',
-                'Hui': 'system-view',
-            }
-            # Словарь команд выхода из режима конфигурации
-            END_COMMANDS = {
-                '2960': 'end',
-                'SG': 'end',
-                'Hui': 'return',
-            }
-            # Словарь команд сохранения
-            SAVE_COMMANDS = {
-                '2960': 'wr',
-                'SG': 'wr',
-                'Hui': 'save',
+            # Назначение шаблонов и команд по типам устройств
+            configs = {
+                '2960': {
+                    'ACL_TEMPLATE_FILENAME': 'acl_cisco_cat.j2',
+                    'CONFIGURE_MODE_COMMAND': 'conf t',
+                    'END_COMMAND': 'end',
+                    'SAVE_COMMAND': 'wr'
+                },
+                'SG': {
+                    'ACL_TEMPLATE_FILENAME': 'acl_cisco_sg.j2',
+                    'CONFIGURE_MODE_COMMAND': 'conf t',
+                    'END_COMMAND': 'end',
+                    'SAVE_COMMAND': 'wr'
+                },
+                'Hui': {
+                    'ACL_TEMPLATE_FILENAME': 'acl_huawei.j2',
+                    'CONFIGURE_MODE_COMMAND': 'system-view',
+                    'END_COMMAND': 'return',
+                    'SAVE_COMMAND': 'save'
+                }
             }
 
             ssh_options = '-oKexAlgorithms=+diffie-hellman-group-exchange-sha1 -oStrictHostKeyChecking=accept-new'
@@ -154,7 +143,7 @@ class NetworkDevice:
                                 or 'SG300' in output_inventory \
                                 or 'SG350' in output_inventory:
                             device_type = 'SG'
-                        ssh.sendline(CONFIGURE_MODE_COMMANDS[device_type])
+                        ssh.sendline(configs[device_type]['CONFIGURE_MODE_COMMAND'])
                         ssh.expect('#')
                     elif vendorCheck == 1:  # Huawei
                         device_type = 'Hui'
@@ -164,17 +153,17 @@ class NetworkDevice:
                         return device_type
 
                     # Конфигурация
-                    if device_type in ACL_TEMPLATE_FILENAMES:
-                        ssh.sendline(CONFIGURE_MODE_COMMANDS[device_type])
+                    if device_type:
+                        ssh.sendline(configs[device_type]['CONFIGURE_MODE_COMMAND'])
                         ssh.expect(['#', ']'])
                         acl_template = env.get_template(
-                            ACL_TEMPLATE_FILENAMES[device_type])
+                            configs[device_type]['ACL_TEMPLATE_FILENAME'])
                         ssh.sendline(acl_template.render(
                             allowed_ip=allowed_ip))
                         ssh.expect(['#', ']'])
-                        ssh.sendline(END_COMMANDS[device_type])
+                        ssh.sendline(configs[device_type]['END_COMMAND'])
                         ssh.expect('[>#]')
-                        ssh.sendline(SAVE_COMMANDS[device_type])
+                        ssh.sendline(configs[device_type]['SAVE_COMMAND'])
                         checkStatus = ssh.expect(
                             ['Building configuration...', '(Y/N)', '[Y/N]'])
                         if checkStatus == 1:  # SG
