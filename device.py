@@ -165,13 +165,32 @@ class NetworkDevice:
             ACL_TEMPLATE_FILENAMES = {
                 '2960': 'acl_cisco_cat.j2',
                 'SG': 'acl_cisco_sg.j2',
+                'Hui': 'acl_huawei.j2',
             }
-            
+            # Словарь команд входа в режим конфигурации
+            CONFIGURE_MODE_COMMANDS = {
+                '2960': 'conf t',
+                'SG': 'conf t',
+                'Hui': 'system-view',
+            }
+            # Словарь команд выхода из режима конфигурации
+            END_COMMANDS = {
+                '2960': 'end',
+                'SG': 'end',
+                'Hui': 'return',
+            }
+            # Словарь команд сохранения
+            SAVE_COMMANDS = {
+                '2960': 'wr',
+                'SG': 'wr',
+                'Hui': 'save',
+            }
+
             ssh_options = '-oKexAlgorithms=+diffie-hellman-group-exchange-sha1 -oStrictHostKeyChecking=accept-new'
 
             # connect via SSH to the device
             self.logger.info(f'Connecting via ssh: {self.cred["username"]}@{self.ip_address}')
-            ssh = expect.spawn(f'ssh {ssh_options} {self.cred["username"]}@{self.ip_address}', timeout=10)
+            ssh = expect.spawn(f'ssh {ssh_options} {self.cred["username"]}@{self.ip_address}', timeout=15)
 
             # Если подключение успешно
             if ssh.isalive():
@@ -187,49 +206,50 @@ class NetworkDevice:
                         else:  # elif index in [1, 2, 3]:
                             ssh.sendline(self.cred["username"])
 
-                    ssh.expect('[>#]')
-                    ssh.logfile = sys.stdout.buffer
+                    # Определение вендора
+                    vendorCheck = ssh.expect(['#','>','Layer 2 Managed Switch','Zyxel'])
+                    if vendorCheck == 0: # Cisco
+                        # Determine the device type by running the 'show inventory' command
+                        ssh.sendline('show inventory')
+                        ssh.expect('#')
+                        output_inventory = '\n'.join(['=' * 57] + [i for i in ssh.before.splitlines() if i] + ['=' * 57])
+                        self.logger.debug(f'Console:\n{output_inventory}')
+                        if 'WS-C2960' in output_inventory:
+                            device_type = '2960'
+                        elif 'SG250' in output_inventory \
+                                or 'SG300' in output_inventory \
+                                or 'SG350' in output_inventory:
+                            device_type = 'SG'
+                        ssh.sendline(CONFIGURE_MODE_COMMANDS[device_type])
+                        ssh.expect('#')
+                    elif vendorCheck == 1: # Huawei
+                        device_type = 'Hui'
+                    elif vendorCheck == 2 or vendorCheck == 3: # Zyxel
+                        ssh.close()
 
-                    # Определяем device_type по выводу 'show inventory'
-                    ssh.sendline('show inventory')
-                    ssh.expect('[>#]')
-
-                    output_inventory = '\n'.join(['=' * 57] + [i for i in ssh.before.splitlines() if i] + ['=' * 57])
-                    self.logger.debug(f'Console:\n{output_inventory}')
-
-                    if 'WS-C2960' in output_inventory:
-                        device_type = '2960'
-                    elif 'SG250' in output_inventory \
-                            or 'SG300' in output_inventory \
-                            or 'SG350' in output_inventory:
-                        device_type = 'SG'
-
-                    # Если модель устройства определена, используем соответствующий шаблон
+                    # Конфигурация
                     if device_type in ACL_TEMPLATE_FILENAMES:
-                        self.logger.info(f'Device type: {device_type}')
-                        # Configure the access list using the appropriate commands for the device type
-                        ssh.sendline('config terminal')
-                        ssh.expect('[#]')
-                        ssh.sendline('no logging con')
-                        ssh.expect('[#]')
+                        ssh.sendline(CONFIGURE_MODE_COMMANDS[device_type])
+                        ssh.expect(['#',']'])
                         acl_template = env.get_template(ACL_TEMPLATE_FILENAMES[device_type])
                         ssh.sendline(acl_template.render(allowed_ip=allowed_ip))
+                        ssh.expect(['#',']'])
+                        ssh.sendline(END_COMMANDS[device_type])
+                        ssh.expect('[>#]')
+                        ssh.sendline(SAVE_COMMANDS[device_type])
+                        checkStatus = ssh.expect(['Building configuration...','(Y/N)','[Y/N]'])
+                        if checkStatus == 1: # SG
+                            ssh.sendline('y')
+                            ssh.expect('#')
+                        elif checkStatus == 2: # Huawei
+                            ssh.sendline('y')
+                            ssh.expect('>')
                     else:
                         self.error = f'Invalid device type: {device_type}'
 
-                    ssh.expect('[#]')
-                    ssh.sendline('end')
-
-                    # Сохранение
-                    ssh.sendline('wr')
-                    ssh.expect('#wr')
-                    checkStatus = ssh.expect(['#', '(Y/N)'])
-                    if checkStatus == 1:
-                        ssh.sendline('y')
-                        ssh.expect('#')
-                    
-                    # Close the SSH session
+                    # Закрыть соединение
                     ssh.close()
+                
                 except Exception as e:
                     if 'Connection timed out' in ssh.before:
                         self.error = 'Connection timed out'
