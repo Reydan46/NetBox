@@ -31,8 +31,7 @@ class Interface:
 
 
 class NetworkDevice:
-    def __init__(self, ip_address, username=None, password=None, community_string=None, site_slug=None, role=None,
-                 logger=None):
+    def __init__(self, ip_address, community_string=None, site_slug=None, role=None, logger=None):
         # Проверяем наличие логгера
         if logger:
             self.logger = logger
@@ -59,19 +58,11 @@ class NetworkDevice:
 
         self.interfaces = []
 
-        self.cred = {
-            "username": "",
-            "password": ""
-        }
         self.community_string = ""
         self.error = ""
 
         # Сохраняем не None значения атрибутов
         self.ip_address = ip_address
-        if username:
-            self.cred.update({"username": username})
-        if password:
-            self.cred.update({"password": password})
         if community_string:
             self.community_string = community_string
             self.__create_SNMPDevice()
@@ -146,11 +137,17 @@ class NetworkDevice:
         self.error = ''
         device_type = ''
 
+        self.cred = {
+            "username": "",
+            "password": ""
+        }
+
         if username:
             self.cred.update({"username": username})
         if password:
             self.cred.update({"password": password})
 
+        # Хардкодим имя пользователя и пароль
         if not self.cred["username"] and not self.cred["password"]:
             self.cred = {"username": "network-backup",
                          "password": 'gAAAAABkJWTLKA-pCESIgNea34_AQ_OhMapaKSKp24RZSyf_ei-T5JZX0dBW_TzfueuNopnqWFmduhuLDHr-sj4mLRGq5z8J4qDyaFomECh7iS0udKIEN1w='}
@@ -185,6 +182,7 @@ class NetworkDevice:
                 'SG': 'wr',
                 'Hui': 'save',
             }
+
 
             ssh_options = '-oKexAlgorithms=+diffie-hellman-group-exchange-sha1 -oStrictHostKeyChecking=accept-new'
 
@@ -606,12 +604,8 @@ class NetworkDevice:
             self.error = "Site Slug is empty!"
             self.logger.error(f'Error: {self.error}')
 
-    def ConfigureInNetBox(self, allowed_ip, username=None, password=None, community_string=None, site_slug=None,
+    def ConfigureInNetBox(self, community_string=None, site_slug=None,
                           role=None):
-        # Конфигурируем Access List
-        self.configure_access_list(allowed_ip=allowed_ip, username=username, password=password)
-        if self.error:
-            return
         # Получаем Hostname, Model, Serial Number по SNMP
         self.get_device_info(community_string=community_string)
         if self.error:
