@@ -329,7 +329,55 @@ class SNMPDevice:
         return interfaces
 
     def getInterfaces_cisco_sg_350(self):
-        return []
+        interfaces = []
+        mode_port_output, self.error = \
+            snmpwalk(oid.cisco_sg_300.mode_port, self.community_string, self.ip_address, 'INDEX-INT')
+
+        if self.error:
+            return
+
+        mode_port_dict = self.__indexes_to_dict(mode_port_output)
+
+        untag_port_output, self.error = \
+            snmpwalk(oid.cisco_sg_300.untag_port, self.community_string, self.ip_address, 'INDEX-INT')
+
+        if self.error:
+            return
+
+        untag_port_dict = self.__indexes_to_dict(untag_port_output)
+
+        hex_tag_port_output, error = \
+            snmpwalk(oid.cisco_sg_300.hex_tag_port, self.community_string, self.ip_address, 'INDEX-HEX')
+
+        if self.error:
+            return
+
+        tag_port_dict = defaultdict(list)
+        for vlan_id, hex_indexes in hex_tag_port_output:
+            if vlan_id == '1':
+                continue
+            for interface_index in self.__hex_to_binary_list(hex_indexes):
+                tag_port_dict[interface_index].append(vlan_id)
+
+        for index, value in mode_port_dict.items():
+            if value == '12':
+                interfaces.append(Interface(
+                    index=index,
+                    untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
+                    mode='access',
+                ))
+            elif value == '11':
+                interfaces.append(Interface(
+                    index=index,
+                    tagged=tag_port_dict[index],
+                    untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
+                    mode='trunk',
+                ))
+                if interfaces[-1].tagged and interfaces[-1].untagged and \
+                        interfaces[-1].untagged in interfaces[-1].tagged:
+                    interfaces[-1].tagged.remove(interfaces[-1].untagged)
+
+        return interfaces
 
     def getInterfaces_huawei(self):
         return []

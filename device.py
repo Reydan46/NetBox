@@ -166,7 +166,7 @@ class NetworkDevice:
                 '2960': 'acl_cisco_cat.j2',
                 'SG': 'acl_cisco_sg.j2',
             }
-            
+
             ssh_options = '-oKexAlgorithms=+diffie-hellman-group-exchange-sha1 -oStrictHostKeyChecking=accept-new'
 
             # connect via SSH to the device
@@ -227,7 +227,7 @@ class NetworkDevice:
                     if checkStatus == 1:
                         ssh.sendline('y')
                         ssh.expect('#')
-                    
+
                     # Close the SSH session
                     ssh.close()
                 except Exception as e:
