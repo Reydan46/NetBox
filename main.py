@@ -37,15 +37,13 @@ for csv_device in devices_reader:
     logger.info(f"Processing device IP: {csv_device['ip device']}")
     network_device = NetworkDevice(
         ip_address=csv_device['ip device'],
-        username=csv_device['username'],
-        password=csv_device['enc_password'],
         community_string=csv_device['community'],
         site_slug=csv_device['site slug'],
         role=csv_device['role'],
         logger=logger
     )
     if not network_device.error:
-        network_device.ConfigureInNetBox(allowed_ip=csv_device['allowed ip'])
+        network_device.ConfigureInNetBox()
     if network_device.error:
         devices_with_error += [network_device]
     logger.info('End processing device\n' + '#' * 120)
