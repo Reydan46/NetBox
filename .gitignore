@@ -6,3 +6,4 @@
 /_test*.py
 *.pyc
 device_lists/*.list
+scanner.log
