@@ -1,20 +1,22 @@
 import os
-import subprocess
 import socket
 import argparse
 import platform
 
-def ping_ip(ip, retries=3):
-    ping_str = "-n 1" if platform.system().lower() == "windows" else "-c 1"
+def ping_ip(ip, retries=3, timeout=500, logfile=None):
+    ping_str = "-n 1 -w " + str(timeout) if platform.system().lower() == "windows" else "-c 1 -W " + str(timeout / 1000)
     for i in range(retries):
         response = os.system("ping " + ping_str + " " + ip)
+        if logfile is not None:
+            with open(logfile, "a") as f:
+                f.write(f"ping {ping_str} {ip} returned {response}\n")
         if response == 0:
             return True
     return False
 
 # define the IP ranges to scan
 ip_ranges = {
-    '10.10.3.0/24': {'start_ip': '10.10.3.10', 'end_ip': '10.10.3.19'},
+    '10.20.3.0/24': {'start_ip': '10.20.3.10', 'end_ip': '10.20.3.19'},
     #'192.168.2.0/24': {'start_ip': '192.168.2.1', 'end_ip': '192.168.2.10'},
     #'10.0.0.0/24': {'start_ip': '10.0.0.1', 'end_ip': '10.0.0.5'}
 }
@@ -24,6 +26,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('scan_type', choices=['port', 'icmp'], help='the type of scan to perform')
 parser.add_argument('--port', type=int, default=22, help='the port number to scan')
 args = parser.parse_args()
+
+# Clear log file
+logfile = f"scanner.log"
+with open(logfile, "w"):
+    pass
 
 # loop through the IP ranges and perform the selected scan type
 for network, ip_range in ip_ranges.items():
@@ -50,7 +57,7 @@ for network, ip_range in ip_ranges.items():
         elif args.scan_type == 'icmp':
             # perform ICMP ping
             try:
-                if ping_ip(ip_address):
+                if ping_ip(ip_address, logfile=logfile):
                     ip_results.append(ip_address)
             except:
                 pass
