@@ -1,10 +1,13 @@
-import os
-import socket
 import argparse
+import os
 import platform
+import socket
+
 
 def ping_ip(ip, retries=3, timeout=500, logfile=None):
-    ping_str = "-n 1 -w " + str(timeout) if platform.system().lower() == "windows" else "-c 1 -W " + str(timeout / 1000)
+    ping_str = "-n 1 -w " + \
+        str(timeout) if platform.system().lower(
+        ) == "windows" else "-c 1 -W " + str(timeout / 1000)
     for i in range(retries):
         response = os.system("ping " + ping_str + " " + ip)
         if logfile is not None:
@@ -14,17 +17,20 @@ def ping_ip(ip, retries=3, timeout=500, logfile=None):
             return True
     return False
 
+
 # define the IP ranges to scan
 ip_ranges = {
     '10.20.3.0/24': {'start_ip': '10.20.3.10', 'end_ip': '10.20.3.19'},
-    #'192.168.2.0/24': {'start_ip': '192.168.2.1', 'end_ip': '192.168.2.10'},
-    #'10.0.0.0/24': {'start_ip': '10.0.0.1', 'end_ip': '10.0.0.5'}
+    # '192.168.2.0/24': {'start_ip': '192.168.2.1', 'end_ip': '192.168.2.10'},
+    # '10.0.0.0/24': {'start_ip': '10.0.0.1', 'end_ip': '10.0.0.5'}
 }
 
 # parse the command-line arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('scan_type', choices=['port', 'icmp'], help='the type of scan to perform')
-parser.add_argument('--port', type=int, default=22, help='the port number to scan')
+parser.add_argument('scan_type', choices=['port', 'icmp'],
+                    help='the type of scan to perform')
+parser.add_argument('--port', type=int, default=22,
+                    help='the port number to scan')
 args = parser.parse_args()
 
 # Clear log file
@@ -61,7 +67,7 @@ for network, ip_range in ip_ranges.items():
                     ip_results.append(ip_address)
             except:
                 pass
-        
+
         # print progress indicator
         print(f"Scanned {ip_address}")
 
