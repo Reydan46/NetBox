@@ -1,33 +1,9 @@
 import os
-import wexpect as expect
 import pynetbox
 from pynetbox.core import api
 from pynetbox.models import dcim
-from snmp import snmpwalk, SNMPDevice
+from snmp import SNMPDevice, Interface
 import logging
-from cryptography.fernet import Fernet
-import jinja2
-import sys
-
-
-class Interface:
-    def __init__(self, index, vlan_id, name, mode=None, mtu=None, mac_address=None, desc=None):
-        self.index = index
-        self.vlan_id = vlan_id
-        self.name = name
-        self.mode = 'access'  # set mode to 'access' by default
-        if mode:
-            self.mode = mode
-        self.mtu = 1500
-        if mtu:
-            self.mtu = mtu
-        self.mac_address = ''
-        if mac_address:
-            self.mac_address = mac_address
-        self.desc = ''
-        if desc:
-            self.desc = desc
-        self.object_interface_netbox = None
 
 
 class NetworkDevice:
@@ -46,6 +22,7 @@ class NetworkDevice:
         self.__netbox_device: pynetbox.models.dcim.Devices = None
         self.__netbox_device_interface = None
         self.__netbox_device_ip_address = None
+        self.__netbox_vlans = {}
 
         self.__password_salt = None
         self.__password_decoder = None
@@ -70,19 +47,6 @@ class NetworkDevice:
             self.site_slug = site_slug
         if role:
             self.role = role
-
-        # Получаем переменную окружения для расшифровки пароля
-        self.__password_salt = os.environ.get('NETBOX_PASSWORD_SALT')
-        if not self.__password_salt:
-            self.error = 'Password SALT is empty!'
-            self.logger.error(self.error)
-            return
-        try:
-            self.__password_decoder = Fernet(self.__password_salt)
-        except Exception as e:
-            self.error = f'Could not initiate Password Decoder: {e}'
-            self.logger.error(self.error)
-            return
 
     def getModel(self):
         if self.model:
@@ -127,6 +91,40 @@ class NetworkDevice:
         except:
             self.error = 'Fail connect to NetBox'
         return self.__netbox
+
+    def __get_vlans_from_netbox(self):
+        self.error = ''
+
+        # Если список Vlan уже был получен
+        if self.__netbox_vlans:
+            return
+
+        self.logger.debug('Get VLANs from NetBox')
+        if not self.__netbox:
+            self.error = 'No connecting to NetBox'
+            self.logger.debug(self.error)
+            return
+
+        self.__netbox_vlans = {}
+        site_out = self.__netbox.dcim.sites.all()
+        if not site_out:
+            self.error = 'No get sites in NetBox!'
+            self.logger.error(self.error)
+            return
+
+        vlans_out = self.__netbox.ipam.vlans.all()
+        if not vlans_out:
+            self.error = 'No get vlans in NetBox!'
+            self.logger.error(self.error)
+            return
+
+        for site in site_out:
+            self.__netbox_vlans.update({site.slug: {}})
+        for vlan in vlans_out:
+            if not vlan.site:
+                self.error = f'Vlan ID {vlan.vid} has no Site!'
+                return
+            self.__netbox_vlans[vlan.site.slug].update({str(vlan.vid): vlan})
 
     def get_device_info(self, community_string=None):
         self.logger.info('Get Device Info')
@@ -286,6 +284,7 @@ class NetworkDevice:
                         mtu=SVI.MTU,
                         mac_address=SVI.MAC_address
                     )
+                    # TODO: Добавить привязку к Vlan
 
                 self.logger.info(f'IP Address: {SVI.ip_address}')
                 self.logger.info(f'Subnet Mask: {SVI.mask}')
@@ -333,88 +332,25 @@ class NetworkDevice:
         if community_string:
             self.community_string = community_string
 
-        # Устанавливаем значения классу, если заданы
-        if self.community_string:
-            self.__create_SNMPDevice()
-
-            sg = False
-            vlan_output, self.error = \
-                snmpwalk('1.3.6.1.4.1.9.9.68.1.2.2.1.2', self.community_string, self.ip_address, 'INDEX-INT')
-            if self.error:
-                self.error = ''
-                sg = True
-                vlan_output, self.error = \
-                    snmpwalk('1.3.6.1.4.1.9.6.1.101.48.62.1.1', self.community_string, self.ip_address, 'INDEX-INT')
-
-            if self.error:
-                return
-            vlan_dict = self.__indexes_to_dict(vlan_output)
-
-            mtu_output, self.error = \
-                snmpwalk('1.3.6.1.2.1.2.2.1.4', self.community_string, self.ip_address, 'INDEX-INT')
-            if self.error:
-                return
-            mtu_dict = self.__indexes_to_dict(mtu_output)
-
-            mac_output, self.error = \
-                snmpwalk('1.3.6.1.2.1.2.2.1.6', self.community_string, self.ip_address, 'INDEX-MAC', hex=True)
-            if self.error:
-                return
-            mac_dict = self.__indexes_to_dict(mac_output)
-
-            desc_output, self.error = \
-                snmpwalk('1.3.6.1.2.1.31.1.1.1.18', self.community_string, self.ip_address, 'INDEX-DESC')
-            if self.error:
-                return
-            desc_dict = self.__indexes_to_dict(desc_output)
-
-            if not sg:
-                int_mode_output, self.error = \
-                    snmpwalk('1.3.6.1.4.1.9.9.46.1.6.1.1.14', self.community_string, self.ip_address, 'INDEX-INT')
-            else:
-                int_mode_output, self.error = \
-                    snmpwalk('1.3.6.1.4.1.9.6.1.101.48.65.1.1', self.community_string, self.ip_address, 'INDEX-INT')
-            if self.error:
-                return
-            int_mode_dict = self.__indexes_to_dict(int_mode_output)
-
-            self.interfaces = []
-            for int_index in int_mode_dict.keys():
-                #############################################
-                # Временно отбираем только порты в access
-                # Для всего - 2
-                # Для SG    - 4
-                #############################################
-                if not sg and int_mode_dict[int_index] != '2':
-                    continue
-                if sg and int_mode_dict[int_index] != '4':
-                    continue
-                #############################################
-
-                if int_index in vlan_dict.keys():
-                    if vlan_dict[int_index] in ['0', '1']:
-                        continue  # skip interfaces with vlan_id of 0 or 1
-
-                    int_name, self.error = snmpwalk(f"1.3.6.1.2.1.2.2.1.2.{int_index}", self.community_string,
-                                                    self.ip_address)
-                    if self.error:
-                        return
-
-                    self.interfaces.append(Interface(
-                        index=int_index,
-                        vlan_id=vlan_dict[int_index],
-                        name=int_name[0],
-                        mtu=mtu_dict[int_index],
-                        mac_address=mac_dict[int_index],
-                        desc=desc_dict[int_index]
-                    ))
-            self.logger.info(f'Found {len(self.interfaces)} interfaces')
-        else:
+        if not self.community_string:
             self.error = "Community String is empty!"
             self.logger.error(f'Error: {self.error}')
+            return
 
-    def send_to_netbox(self, interface_object):
-        self.logger.info(f"Index: {interface_object.index}, VLAN ID: {interface_object.vlan_id}")
+        self.__create_SNMPDevice()
+
+        interfaces_out = self.__snmp.getInterfaces()
+        self.error = self.__snmp.error
+
+        if self.error:
+            self.logger.error(f'Error: {self.error}')
+            return
+
+        self.interfaces = interfaces_out
+        self.logger.info(f'Found {len(self.interfaces)} interfaces')
+
+    def send_to_netbox(self, interface_object: Interface):
+        self.logger.info(f"Index: {interface_object.index}, VLAN ID: {interface_object.untagged}")
         self.error = ''
 
         if self.site_slug:
@@ -423,11 +359,31 @@ class NetworkDevice:
             if self.error:
                 return
 
-            # Get the ID of the VLAN with the specified VLAN ID and associated with the specified site
-            vlan = self.__netbox.ipam.vlans.get(site=self.site_slug, vid=interface_object.vlan_id)
-            if not vlan:
-                self.error = f'Vlan ID {interface_object.vlan_id} not found in NetBox'
+            # Получаем список Vlan'ов из NetBox
+            self.__get_vlans_from_netbox()
+            if self.error:
                 return
+
+            if self.site_slug not in self.__netbox_vlans:
+                self.error = f'Site Slug {self.site_slug} not found in NetBox'
+                return
+
+            # Получаем внутренние объекты vlan access-интерфейсов из NetBox
+            netbox_untagged_id = None
+            if interface_object.untagged:
+                if interface_object.untagged not in self.__netbox_vlans[self.site_slug]:
+                    self.error = f'Vlan ID {interface_object.untagged} not found in NetBox (Site {self.site_slug})'
+                    return
+                netbox_untagged_id = self.__netbox_vlans[self.site_slug][interface_object.untagged]
+
+            # Получаем внутренние объекты vlan trunk-интерфейсов из NetBox
+            netbox_tagged_vlans = []
+            if interface_object.tagged:
+                for vid in interface_object.tagged:
+                    if vid not in self.__netbox_vlans[self.site_slug]:
+                        self.error = f'Vlan ID {vid} not found in NetBox (Site {self.site_slug})'
+                        return
+                    netbox_tagged_vlans += [self.__netbox_vlans[self.site_slug][vid]]
 
             # Get the existing interface object
             netbox_interface = self.__netbox.dcim.interfaces.get(device=self.__netbox_device.name,
@@ -441,20 +397,29 @@ class NetworkDevice:
                 netbox_interface.mac_address = interface_object.mac_address
                 netbox_interface.description = interface_object.desc
                 netbox_interface.mode = interface_object.mode
-                netbox_interface.untagged_vlan = {"id": vlan.id}
+
+                netbox_interface.untagged_vlan = netbox_untagged_id
+                netbox_interface.tagged_vlans = netbox_tagged_vlans
+                # Обновляем тип интерфейса, только если он не Other
+                # Что бы предотвратить изменение типа из шаблона NetBox
+                if interface_object.type != "other":
+                    netbox_interface.type = interface_object.type
                 netbox_interface.save()
                 self.logger.info(f"Data in interface {interface_object.index} UPDATED in NetBox")
             else:
-                self.__netbox_device_interface = self.__netbox.dcim.interfaces.create(
-                    device=self.__netbox_device.id,
-                    name=interface_object.name,
-                    mtu=interface_object.mtu,
-                    mac_address=interface_object.mac_address,
-                    description=interface_object.desc,
-                    mode=interface_object.mode,
-                    untagged_vlan={"id": vlan.id},
-                    type="other",
-                )
+                self.__netbox_device_interface: pynetbox.models.dcim.Interfaces = \
+                    self.__netbox.dcim.interfaces.create(
+                        device=self.__netbox_device.id,
+                        name=interface_object.name,
+                        mtu=interface_object.mtu,
+                        mac_address=interface_object.mac_address,
+                        description=interface_object.desc,
+                        mode=interface_object.mode,
+                        type=interface_object.type,
+                        untagged_vlan=netbox_untagged_id,
+                        tagged_vlans=netbox_tagged_vlans
+                    )
+
                 self.logger.info(f"Data in interface {interface_object.index} CREATED in NetBox")
         else:
             self.error = "Site Slug is empty!"

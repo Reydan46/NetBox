@@ -48,7 +48,12 @@ class Interface:
         self.desc = ''
         if desc:
             self.desc = desc
+        self.type = "other"
         self.object_interface_netbox = None
+
+    def __repr__(self):
+        tagged = f" Tagged: " + ','.join(self.tagged) if self.tagged else ""
+        return f'{self.name} {self.index} ({self.mode}){f" Untagged: {self.untagged}" if self.untagged else ""}{tagged}'
 
 
 class SNMPDevice:
@@ -210,21 +215,17 @@ class SNMPDevice:
 
         if not self.model:
             self.error = 'Model is empty!'
-            self.logger.error(self.error)
-            return
-
-        if not self.ip_address:
+        elif not self.ip_address:
             self.error = 'IP address is Empty!'
-            self.logger.error(self.error)
-            return
-
-        if not self.community_string:
+        elif not self.community_string:
             self.error = 'Community string is Empty!'
-            self.logger.error(self.error)
-            return
+
+        if self.error:
+            return []
 
         self.__model_lists_reader()
 
+        interfaces = []
         if self.model in self.model_cisco_catalyst:
             interfaces = self.getInterfaces_cisco_catalyst()
         elif self.model in self.model_cisco_sg_300:
@@ -237,33 +238,32 @@ class SNMPDevice:
             interfaces = self.getInterfaces_zyxel()
         else:
             self.error = f'Model {self.model} is not found in getInterfaces!'
-            return
 
         if self.error:
-            return
+            return []
 
         int_name_output, self.error = \
             snmpwalk('1.3.6.1.2.1.2.2.1.2', self.community_string, self.ip_address, 'INDEX-DESC')
         if self.error:
-            return
+            return []
         int_name_dict = self.__indexes_to_dict(int_name_output)
 
         mtu_output, self.error = \
             snmpwalk('1.3.6.1.2.1.2.2.1.4', self.community_string, self.ip_address, 'INDEX-INT')
         if self.error:
-            return
+            return []
         mtu_dict = self.__indexes_to_dict(mtu_output)
 
         mac_output, self.error = \
             snmpwalk('1.3.6.1.2.1.2.2.1.6', self.community_string, self.ip_address, 'INDEX-MAC', hex=True)
         if self.error:
-            return
+            return []
         mac_dict = self.__indexes_to_dict(mac_output)
 
         desc_output, self.error = \
             snmpwalk('1.3.6.1.2.1.31.1.1.1.18', self.community_string, self.ip_address, 'INDEX-DESC')
         if self.error:
-            return
+            return []
         desc_dict = self.__indexes_to_dict(desc_output)
 
         for interface in interfaces:
@@ -271,6 +271,8 @@ class SNMPDevice:
             interface.mtu = mtu_dict[interface.index]
             interface.mac_address = mac_dict[interface.index]
             interface.desc = desc_dict[interface.index]
+            if interface.name[0].lower() == 'p':
+                interface.type = 'lag'
 
         return interfaces
 
@@ -320,7 +322,7 @@ class SNMPDevice:
                     index=index,
                     tagged=tag_port_dict[index],
                     untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
-                    mode='trunk',
+                    mode='tagged',
                 ))
                 if interfaces[-1].tagged and interfaces[-1].untagged and \
                         interfaces[-1].untagged in interfaces[-1].tagged:
@@ -364,7 +366,7 @@ class SNMPDevice:
                 interfaces.append(Interface(
                     index=index,
                     untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
-                    mode='access',
+                    mode='tagged',
                 ))
             elif value == '11':
                 interfaces.append(Interface(
@@ -393,12 +395,13 @@ class RegexAction:
         self.action = action
 
 
-def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False):
+def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False, custom_option=None, logger=None):
     # snmpwalk -v 2c -c public -Ox -On 10.10.3.13 1.3.6.1.2.1.47.1.1.1.1.11
     out = []  # список для хранения результатов
     try:
         process = ["snmpwalk", "-v", "2c", "-c", community_string, "-On", *(["-Ox"] if hex else []),
-                   ip_address, *([oid] if oid else [])]
+                   *([custom_option] if custom_option else []), ip_address, *([oid] if oid else [])]
+        if logger: logger.debug(' '.join(process))
         # Помещаем результат команды snmpwalk в переменную
         result = subprocess.run(process, capture_output=True, text=True)
         # result = subprocess.run(process, capture_output=True, text=True)
