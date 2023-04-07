@@ -282,7 +282,7 @@ class NetworkDevice:
                         device=self.__netbox_device.id,
                         type="virtual",
                         mtu=SVI.MTU,
-                        mac_address=SVI.MAC_address
+                        mac=SVI.MAC
                     )
                     # TODO: Добавить привязку к Vlan
 
@@ -350,7 +350,7 @@ class NetworkDevice:
         self.logger.info(f'Found {len(self.interfaces)} interfaces')
 
     def send_to_netbox(self, interface_object: Interface):
-        self.logger.info(f"Index: {interface_object.index}, VLAN ID: {interface_object.untagged}")
+        self.logger.info(f"Index: {interface_object}")
         self.error = ''
 
         if self.site_slug:
@@ -374,7 +374,7 @@ class NetworkDevice:
                 if interface_object.untagged not in self.__netbox_vlans[self.site_slug]:
                     self.error = f'Vlan ID {interface_object.untagged} not found in NetBox (Site {self.site_slug})'
                     return
-                netbox_untagged_id = self.__netbox_vlans[self.site_slug][interface_object.untagged]
+                netbox_untagged_id = {"id": self.__netbox_vlans[self.site_slug][interface_object.untagged].id}
 
             # Получаем внутренние объекты vlan trunk-интерфейсов из NetBox
             netbox_tagged_vlans = []
@@ -394,7 +394,7 @@ class NetworkDevice:
             if netbox_interface:
                 netbox_interface.name = interface_object.name
                 netbox_interface.mtu = interface_object.mtu
-                netbox_interface.mac_address = interface_object.mac_address
+                netbox_interface.mac = interface_object.mac
                 netbox_interface.description = interface_object.desc
                 netbox_interface.mode = interface_object.mode
 
@@ -412,13 +412,14 @@ class NetworkDevice:
                         device=self.__netbox_device.id,
                         name=interface_object.name,
                         mtu=interface_object.mtu,
-                        mac_address=interface_object.mac_address,
+                        mac=interface_object.mac,
                         description=interface_object.desc,
                         mode=interface_object.mode,
                         type=interface_object.type,
                         untagged_vlan=netbox_untagged_id,
-                        tagged_vlans=netbox_tagged_vlans
                     )
+                self.__netbox_device_interface.tagged_vlans = netbox_tagged_vlans
+                self.__netbox_device_interface.save()
 
                 self.logger.info(f"Data in interface {interface_object.index} CREATED in NetBox")
         else:

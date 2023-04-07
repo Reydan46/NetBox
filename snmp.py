@@ -5,27 +5,27 @@ from netaddr import IPAddress
 import traceback
 from collections import defaultdict
 import oid.general
-import oid.cisco_sg_300
+import oid.cisco_sg
 
 
 # Виртуальный IP интерфейс
 class SVI:
-    def __init__(self, ip_address, mask, index, description, MTU, MAC_address):
+    def __init__(self, ip_address, mask, index, description, MTU, MAC):
         self.index = index
         self.ip_address = ip_address
         self.mask = mask
         self.ip_with_prefix = f'{self.ip_address}/{IPAddress(self.mask).netmask_bits()}'
         self.description = description
         self.MTU = MTU
-        self.MAC_address = MAC_address
+        self.MAC = MAC
 
     def __repr__(self):
-        return f'{self.index} - {self.ip_with_prefix} ({self.MAC_address}) - {self.description} - {self.MTU}'
+        return f'{self.index} - {self.ip_with_prefix} ({self.MAC}) - {self.description} - {self.MTU}'
 
 
 # Физический интерфейс
 class Interface:
-    def __init__(self, index, untagged=None, tagged=None, name=None, mode=None, mtu=None, mac_address=None, desc=None):
+    def __init__(self, index, untagged=None, tagged=None, name=None, mode=None, mtu=None, mac=None, desc=None):
         self.index = index
         self.untagged = None
         if untagged:
@@ -42,9 +42,9 @@ class Interface:
         self.mtu = 1500
         if mtu:
             self.mtu = mtu
-        self.mac_address = ''
-        if mac_address:
-            self.mac_address = mac_address
+        self.mac = ''
+        if mac:
+            self.mac = mac
         self.desc = ''
         if desc:
             self.desc = desc
@@ -64,11 +64,14 @@ class SNMPDevice:
             # Объявляем logger, если таковой не задан
             self.logger = logging.getLogger('SNMPDevice')
 
-        self.model_zyxel = []
-        self.model_huawei = []
-        self.model_cisco_sg_350 = []
-        self.model_cisco_sg_300 = []
-        self.model_cisco_catalyst = []
+        self.models = {
+            "cisco_catalyst": [],
+            "cisco_sg_300": [],
+            "cisco_sg_350": [],
+            "huawei": [],
+            "zyxel": []
+        }
+        self.family_model = ""
 
         self.error = ''
         self.model = ''
@@ -100,27 +103,21 @@ class SNMPDevice:
     def __model_lists_reader(self):
         self.logger.info('Read models from file')
 
-        self.model_zyxel = []
-        self.model_huawei = []
-        self.model_cisco_sg_350 = []
-        self.model_cisco_sg_300 = []
-        self.model_cisco_catalyst = []
+        self.models = {
+            "cisco_catalyst": [],
+            "cisco_sg_300": [],
+            "cisco_sg_350": [],
+            "huawei": [],
+            "zyxel": []
+        }
+        self.family_model = ""
 
-        file = open('model.lists', 'r').read()
+        with open('model.lists', 'r') as f:
+            file = f.read()
+
         for line in file.split('\n'):
-            model_type, models = line.split(':')
-            models = [i for i in models.split(',') if i]
-            match model_type:
-                case "cisco_catalyst":
-                    self.model_cisco_catalyst = models
-                case "cisco_sg_300":
-                    self.model_cisco_sg_300 = models
-                case "cisco_sg_350":
-                    self.model_cisco_sg_350 = models
-                case "huawei":
-                    self.model_huawei = models
-                case "zyxel":
-                    self.model_zyxel = models
+            model_type, models_line = line.split(':')
+            self.models[model_type] = list(filter(None, models_line.split(',')))
 
     def getValue(self, action):
         self.error = ''
@@ -139,7 +136,8 @@ class SNMPDevice:
         return value
 
     def getHostname(self):
-        value = self.getValue(snmpwalk(oid.general.hostname, self.community_string, self.ip_address, 'DotSplit'))
+        value = self.getValue(
+            snmpwalk(oid.general.hostname, self.community_string, self.ip_address, 'DotSplit', logger=self.logger))
 
         if self.error:
             return None, self.error
@@ -147,7 +145,7 @@ class SNMPDevice:
         return value[0], self.error
 
     def getModel(self):
-        value = self.getValue(snmpwalk(oid.general.model, self.community_string, self.ip_address))
+        value = self.getValue(snmpwalk(oid.general.model, self.community_string, self.ip_address, logger=self.logger))
 
         if self.error:
             return None, self.error
@@ -156,7 +154,8 @@ class SNMPDevice:
         self.model = re_out.group(1) if re_out else ''
 
         if not self.model:
-            value = self.getValue(snmpwalk(oid.general.alt_model, self.community_string, self.ip_address))
+            value = self.getValue(
+                snmpwalk(oid.general.alt_model, self.community_string, self.ip_address, logger=self.logger))
             if self.error:
                 return None, self.error
             self.model = next((i for i in value if i), '')
@@ -164,7 +163,8 @@ class SNMPDevice:
         return self.model, self.error
 
     def getSerialNumber(self):
-        value = self.getValue(snmpwalk(oid.general.serial_number, self.community_string, self.ip_address))
+        value = self.getValue(
+            snmpwalk(oid.general.serial_number, self.community_string, self.ip_address, logger=self.logger))
 
         if self.error:
             return None, self.error
@@ -172,14 +172,16 @@ class SNMPDevice:
         return value[0], self.error
 
     def getSVIs(self):
-        indexes = self.getValue(snmpwalk(oid.general.svi_indexes, self.community_string, self.ip_address, 'INT'))
+        indexes = self.getValue(
+            snmpwalk(oid.general.svi_indexes, self.community_string, self.ip_address, 'INT', logger=self.logger))
         if self.error:
             return None, self.error
         ip_addresses = self.getValue(
             snmpwalk(oid.general.svi_ip_addresses, self.community_string, self.ip_address, 'IP'))
         if self.error:
             return None, self.error
-        masks = self.getValue(snmpwalk(oid.general.svi_masks, self.community_string, self.ip_address, 'IP'))
+        masks = self.getValue(
+            snmpwalk(oid.general.svi_masks, self.community_string, self.ip_address, 'IP', logger=self.logger))
         if self.error:
             return None, self.error
         SVIs = []
@@ -187,16 +189,16 @@ class SNMPDevice:
             if masks[i] == '0.0.0.0':
                 continue
 
-            description, self.error = snmpwalk(f"{oid.general.svi_description}.{index}", self.community_string,
-                                               self.ip_address)
+            description, self.error = snmpwalk(f"{oid.general.si_int_name}.{index}", self.community_string,
+                                               self.ip_address, logger=self.logger)
             if self.error:
                 return
-            MTU, self.error = snmpwalk(f"{oid.general.svi_mtu}.{index}", self.community_string,
-                                       self.ip_address, 'INT')
+            MTU, self.error = snmpwalk(f"{oid.general.si_mtu}.{index}", self.community_string,
+                                       self.ip_address, 'INT', logger=self.logger)
             if self.error:
                 return
-            MAC_address, self.error = snmpwalk(f"{oid.general.svi_mac_address}.{index}", self.community_string,
-                                               self.ip_address, 'MAC', hex=True)
+            MAC, self.error = snmpwalk(f"{oid.general.si_mac}.{index}", self.community_string,
+                                       self.ip_address, 'MAC', hex=True, logger=self.logger)
             if self.error:
                 return
 
@@ -206,7 +208,7 @@ class SNMPDevice:
                 index=index,
                 description=description[0],
                 MTU=MTU[0],
-                MAC_address=MAC_address[0]
+                MAC=MAC[0]
             )]
         return SVIs, self.error
 
@@ -225,43 +227,53 @@ class SNMPDevice:
 
         self.__model_lists_reader()
 
+        self.logger.info(f'Find model "{self.model}" in model.lists')
         interfaces = []
-        if self.model in self.model_cisco_catalyst:
-            interfaces = self.getInterfaces_cisco_catalyst()
-        elif self.model in self.model_cisco_sg_300:
-            interfaces = self.getInterfaces_cisco_sg_300()
-        elif self.model in self.model_cisco_sg_350:
-            interfaces = self.getInterfaces_cisco_sg_350()
-        elif self.model in self.model_huawei:
-            interfaces = self.getInterfaces_huawei()
-        elif self.model in self.model_zyxel:
-            interfaces = self.getInterfaces_zyxel()
-        else:
+        model_families = {
+            "cisco_catalyst": self.getInterfaces_cisco_catalyst,
+            "cisco_sg_300": self.getInterfaces_cisco_sg,
+            "cisco_sg_350": self.getInterfaces_cisco_sg,
+            "huawei": self.getInterfaces_huawei,
+            "zyxel": self.getInterfaces_zyxel
+        }
+
+        flag_find_family = False
+        for family, get_interfaces_func in model_families.items():
+            if self.model in self.models[family]:
+                self.family_model = family
+                self.logger.info(f'Run block getInterfaces for "{self.family_model}"')
+                interfaces = get_interfaces_func()
+                flag_find_family = True
+                break
+
+        if not flag_find_family:
             self.error = f'Model {self.model} is not found in getInterfaces!'
 
         if self.error:
             return []
 
         int_name_output, self.error = \
-            snmpwalk('1.3.6.1.2.1.2.2.1.2', self.community_string, self.ip_address, 'INDEX-DESC')
+            snmpwalk(oid.general.si_int_name, self.community_string, self.ip_address, 'INDEX-DESC', logger=self.logger)
         if self.error:
             return []
         int_name_dict = self.__indexes_to_dict(int_name_output)
 
         mtu_output, self.error = \
-            snmpwalk('1.3.6.1.2.1.2.2.1.4', self.community_string, self.ip_address, 'INDEX-INT')
+            snmpwalk(oid.general.si_mtu, self.community_string, self.ip_address, 'INDEX-INT', logger=self.logger)
         if self.error:
             return []
         mtu_dict = self.__indexes_to_dict(mtu_output)
 
         mac_output, self.error = \
-            snmpwalk('1.3.6.1.2.1.2.2.1.6', self.community_string, self.ip_address, 'INDEX-MAC', hex=True)
+            snmpwalk(oid.general.si_mac, self.community_string, self.ip_address, 'INDEX-MAC', hex=True,
+                     logger=self.logger)
         if self.error:
             return []
         mac_dict = self.__indexes_to_dict(mac_output)
 
         desc_output, self.error = \
-            snmpwalk('1.3.6.1.2.1.31.1.1.1.18', self.community_string, self.ip_address, 'INDEX-DESC')
+            snmpwalk(oid.general.si_description, self.community_string, self.ip_address, 'INDEX-DESC',
+                     logger=self.logger)
         if self.error:
             return []
         desc_dict = self.__indexes_to_dict(desc_output)
@@ -269,8 +281,9 @@ class SNMPDevice:
         for interface in interfaces:
             interface.name = int_name_dict[interface.index]
             interface.mtu = mtu_dict[interface.index]
-            interface.mac_address = mac_dict[interface.index]
+            interface.mac = mac_dict[interface.index]
             interface.desc = desc_dict[interface.index]
+            # Предполагаем, что интерфейсы начинающиеся с "P" являются LAG
             if interface.name[0].lower() == 'p':
                 interface.type = 'lag'
 
@@ -279,10 +292,10 @@ class SNMPDevice:
     def getInterfaces_cisco_catalyst(self):
         return []
 
-    def getInterfaces_cisco_sg_300(self):
+    def getInterfaces_cisco_sg(self):
         interfaces = []
         mode_port_output, self.error = \
-            snmpwalk(oid.cisco_sg_300.mode_port, self.community_string, self.ip_address, 'INDEX-INT')
+            snmpwalk(oid.cisco_sg.mode_port, self.community_string, self.ip_address, 'INDEX-INT', logger=self.logger)
 
         if self.error:
             return
@@ -290,7 +303,8 @@ class SNMPDevice:
         mode_port_dict = self.__indexes_to_dict(mode_port_output)
 
         untag_port_output, self.error = \
-            snmpwalk(oid.cisco_sg_300.untag_port, self.community_string, self.ip_address, 'INDEX-INT')
+            snmpwalk(oid.cisco_sg.untag_port[self.family_model], self.community_string, self.ip_address, 'INDEX-INT',
+                     logger=self.logger)
 
         if self.error:
             return
@@ -298,7 +312,7 @@ class SNMPDevice:
         untag_port_dict = self.__indexes_to_dict(untag_port_output)
 
         hex_tag_port_output, error = \
-            snmpwalk(oid.cisco_sg_300.hex_tag_port, self.community_string, self.ip_address, 'INDEX-HEX')
+            snmpwalk(oid.cisco_sg.hex_tag_port, self.community_string, self.ip_address, 'INDEX-HEX', logger=self.logger)
 
         if self.error:
             return
@@ -311,69 +325,22 @@ class SNMPDevice:
                 tag_port_dict[interface_index].append(vlan_id)
 
         for index, value in mode_port_dict.items():
-            if value == '2':
+            untagged = None
+            if index in untag_port_dict and \
+                    untag_port_dict[index] not in ['0','1']:
+                untagged = untag_port_dict[index]
+            if value == oid.cisco_sg.mode_port_state[self.family_model]["access"]:
                 interfaces.append(Interface(
                     index=index,
-                    untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
+                    untagged=untagged,
                     mode='access',
                 ))
-            elif value == '3':
+            elif value == oid.cisco_sg.mode_port_state[self.family_model]["tagged"]:
                 interfaces.append(Interface(
                     index=index,
                     tagged=tag_port_dict[index],
-                    untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
+                    untagged=untagged,
                     mode='tagged',
-                ))
-                if interfaces[-1].tagged and interfaces[-1].untagged and \
-                        interfaces[-1].untagged in interfaces[-1].tagged:
-                    interfaces[-1].tagged.remove(interfaces[-1].untagged)
-
-        return interfaces
-
-    def getInterfaces_cisco_sg_350(self):
-        interfaces = []
-        mode_port_output, self.error = \
-            snmpwalk(oid.cisco_sg_300.mode_port, self.community_string, self.ip_address, 'INDEX-INT')
-
-        if self.error:
-            return
-
-        mode_port_dict = self.__indexes_to_dict(mode_port_output)
-
-        untag_port_output, self.error = \
-            snmpwalk(oid.cisco_sg_300.untag_port, self.community_string, self.ip_address, 'INDEX-INT')
-
-        if self.error:
-            return
-
-        untag_port_dict = self.__indexes_to_dict(untag_port_output)
-
-        hex_tag_port_output, error = \
-            snmpwalk(oid.cisco_sg_300.hex_tag_port, self.community_string, self.ip_address, 'INDEX-HEX')
-
-        if self.error:
-            return
-
-        tag_port_dict = defaultdict(list)
-        for vlan_id, hex_indexes in hex_tag_port_output:
-            if vlan_id == '1':
-                continue
-            for interface_index in self.__hex_to_binary_list(hex_indexes):
-                tag_port_dict[interface_index].append(vlan_id)
-
-        for index, value in mode_port_dict.items():
-            if value == '12':
-                interfaces.append(Interface(
-                    index=index,
-                    untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
-                    mode='tagged',
-                ))
-            elif value == '11':
-                interfaces.append(Interface(
-                    index=index,
-                    tagged=tag_port_dict[index],
-                    untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
-                    mode='trunk',
                 ))
                 if interfaces[-1].tagged and interfaces[-1].untagged and \
                         interfaces[-1].untagged in interfaces[-1].tagged:
