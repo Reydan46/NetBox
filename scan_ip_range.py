@@ -18,6 +18,36 @@ def ping_ip(ip, retries=3, timeout=500, logfile=None):
     return False
 
 
+def scan_ips(ip_range, scan_type, port=None, logfile=None):
+    start_ip = ip_range['start_ip']
+    end_ip = ip_range['end_ip']
+    prefix = '.'.join(start_ip.split('.')[:-1]) + '.'
+
+    # loop through the IP range and perform the selected scan type on each IP address
+    for i in range(int(start_ip.split('.')[-1]), int(end_ip.split('.')[-1]) + 1):
+        ip_address = prefix + str(i)
+
+        if scan_type == 'port':
+            # perform port scan
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((ip_address, port))
+            if result == 0:
+                yield ip_address
+            sock.close()
+
+        elif scan_type == 'icmp':
+            # perform ICMP ping
+            try:
+                if ping_ip(ip_address, logfile=logfile):
+                    yield ip_address
+            except:
+                pass
+
+        # print progress indicator
+        print(f"Scanned {ip_address}")
+
+
 # define the IP ranges to scan
 ip_ranges = {
     '10.20.3.0/24': {'start_ip': '10.20.3.10', 'end_ip': '10.20.3.19'},
@@ -40,46 +70,21 @@ with open(logfile, "w"):
 
 # loop through the IP ranges and perform the selected scan type
 for network, ip_range in ip_ranges.items():
-    start_ip = ip_range['start_ip']
-    end_ip = ip_range['end_ip']
-    prefix = '.'.join(start_ip.split('.')[:-1]) + '.'
+    # initialize a generator object to scan IPs in the current IP range
+    ip_generator = scan_ips(ip_range, args.scan_type,
+                            args.port if args.scan_type == 'port' else None, logfile)
 
-    # initialize a list to store IP addresses with the selected scan result
-    ip_results = []
-
-    # loop through the IP range and perform the selected scan type on each IP address
-    for i in range(int(start_ip.split('.')[-1]), int(end_ip.split('.')[-1]) + 1):
-        ip_address = prefix + str(i)
-
-        if args.scan_type == 'port':
-            # perform port scan
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
-            result = sock.connect_ex((ip_address, args.port))
-            if result == 0:
-                ip_results.append(ip_address)
-            sock.close()
-
-        elif args.scan_type == 'icmp':
-            # perform ICMP ping
-            try:
-                if ping_ip(ip_address, logfile=logfile):
-                    ip_results.append(ip_address)
-            except:
-                pass
-
-        # print progress indicator
-        print(f"Scanned {ip_address}")
-
-    # save results to file
+    # save results to file and count the number of IP addresses with scan results
+    ip_count = 0
     network_prefix = '.'.join(network.split('.')[:-1])
     file_name = f"{network_prefix}_{args.scan_type}-scan-results.list"
     directory = "device_lists"
     if not os.path.exists(directory):
         os.makedirs(directory)
     with open(os.path.join(directory, file_name), "w") as f:
-        for ip in ip_results:
+        for ip in ip_generator:
             f.write(ip + "\n")
+            ip_count += 1
 
     # print summary table
-    print(f"\n{len(ip_results)} IP addresses with {args.scan_type} scan result are found in the network {network}\n")
+    print(f"\n{ip_count} IP addresses with {args.scan_type} scan result are found in the network {network}\n")
