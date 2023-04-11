@@ -168,8 +168,9 @@ class SNMPDevice:
 
         if self.error:
             return None, self.error
+        serial_number = next((i for i in value if i), '')
 
-        return value[0], self.error
+        return serial_number, self.error
 
     def getSVIs(self):
         indexes = self.getValue(
@@ -327,7 +328,7 @@ class SNMPDevice:
         for index, value in mode_port_dict.items():
             untagged = None
             if index in untag_port_dict and \
-                    untag_port_dict[index] not in ['0','1']:
+                    untag_port_dict[index] not in ['0', '1']:
                 untagged = untag_port_dict[index]
             if value == oid.cisco_sg.mode_port_state[self.family_model]["access"]:
                 interfaces.append(Interface(
