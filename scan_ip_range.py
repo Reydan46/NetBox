@@ -80,8 +80,7 @@ if __name__ == "__main__":
     # define the IP ranges to scan
     ip_ranges = {
         '10.20.3.0/24': {'start_ip': '10.20.3.10', 'end_ip': '10.20.3.19'},
-        # '192.168.2.0/24': {'start_ip': '192.168.2.1', 'end_ip': '192.168.2.10'},
-        # '10.0.0.0/24': {'start_ip': '10.0.0.1', 'end_ip': '10.0.0.5'}
+        '10.10.3.0/24': {'start_ip': '10.10.3.10', 'end_ip': '10.10.3.19'},
     }
 
     # parse the command-line arguments
