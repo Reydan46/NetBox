@@ -196,6 +196,20 @@ class NetworkDevice:
             return
         self.logger.info(f'Serial Number: {self.serial_number}')
 
+    def getRoleFromHostname(self):
+        if self.hostname:
+            self.logger.info("Get Role from Hostname")
+            role_out = re.search(r'-([p]?sw)\d+', self.hostname)
+            if role_out:
+                match role_out.group(1):
+                    case 'psw':
+                        self.role = 'poe-switch'
+                    case 'sw':
+                        self.role = 'Access switch'
+                if self.role:
+                    self.logger.info(f'Found role: {self.role}')
+
+
     def create_netbox_device(self, site_slug=None, role=None):
         self.logger.info('Create Device in NetBox')
 
@@ -207,6 +221,9 @@ class NetworkDevice:
             self.site_slug = site_slug
         if role:
             self.role = role
+
+        if not self.role:
+            self.getRoleFromHostname()
 
         # Если все необходимые параметры заданы
         if self.hostname and self.model and self.serial_number and self.site_slug and self.role:
