@@ -30,6 +30,8 @@ logger.addHandler(c_handler)
 devices_with_error = []
 devices_file = open('devices.csv', newline='')
 devices_reader = csv.DictReader(devices_file, delimiter=';')
+netbox_vlans = None
+netbox_connection = None
 for csv_device in devices_reader:
     if csv_device['pass']:
         logger.info(f"Passed device IP: {csv_device['ip device']}\n" + '#' * 120)
@@ -43,7 +45,11 @@ for csv_device in devices_reader:
         logger=logger
     )
     if not network_device.error:
+        network_device.setNetboxConnection(netbox_connection)
+        network_device.setNetboxVlans(netbox_vlans)
         network_device.ConfigureInNetBox()
+        netbox_connection = network_device.getNetboxConnection()
+        netbox_vlans = network_device.getNetboxVlans()
     if network_device.error:
         devices_with_error += [network_device]
     logger.info('End processing device\n' + '#' * 120)

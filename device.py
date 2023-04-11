@@ -3,6 +3,7 @@ import pynetbox
 from pynetbox.core import api
 from pynetbox.models import dcim
 from snmp import SNMPDevice, Interface
+import re
 import logging
 
 
@@ -16,11 +17,12 @@ class NetworkDevice:
 
         self.__snmp: SNMPDevice = None
 
-        self.__netbox: pynetbox.core.api.Api = None
+        self.__netbox_connection: pynetbox.core.api.Api = None
         self.__netbox_url = None
         self.__netbox_token = None
         self.__netbox_device: pynetbox.models.dcim.Devices = None
-        self.__netbox_device_interface = None
+        self.__netbox_device_sv_interfaces = []
+        self.__netbox_device_sp_interfaces = []
         self.__netbox_device_ip_address = None
         self.__netbox_vlans = {}
 
@@ -54,6 +56,18 @@ class NetworkDevice:
         else:
             return "Undefined"
 
+    def getNetboxConnection(self):
+        return self.__netbox_connection
+
+    def setNetboxConnection(self, netbox_connection: pynetbox.core.api.Api):
+        self.__netbox_connection = netbox_connection
+
+    def getNetboxVlans(self):
+        return self.__netbox_vlans
+
+    def setNetboxVlans(self, netbox_vlans: dict):
+        self.__netbox_vlans = netbox_vlans
+
     def __create_SNMPDevice(self):
         if not self.__snmp:
             if not self.community_string:
@@ -75,7 +89,7 @@ class NetworkDevice:
     def __connect_to_netbox(self):
         self.error = ''
         try:
-            if not self.__netbox:
+            if not self.__netbox_connection:
                 self.__netbox_url = os.environ.get('NETBOX_URL')
                 if not self.__netbox_url:
                     self.error = 'NetBox URL is empty!'
@@ -87,10 +101,10 @@ class NetworkDevice:
                     self.logger.error(self.error)
                     return None
                 self.logger.debug('Connect to NetBox')
-                self.__netbox = pynetbox.api(url=self.__netbox_url, token=self.__netbox_token)
+                self.__netbox_connection = pynetbox.api(url=self.__netbox_url, token=self.__netbox_token)
         except:
             self.error = 'Fail connect to NetBox'
-        return self.__netbox
+        return self.__netbox_connection
 
     def __get_vlans_from_netbox(self):
         self.error = ''
@@ -100,19 +114,19 @@ class NetworkDevice:
             return
 
         self.logger.debug('Get VLANs from NetBox')
-        if not self.__netbox:
+        if not self.__netbox_connection:
             self.error = 'No connecting to NetBox'
             self.logger.debug(self.error)
             return
 
         self.__netbox_vlans = {}
-        site_out = self.__netbox.dcim.sites.all()
+        site_out = self.__netbox_connection.dcim.sites.all()
         if not site_out:
             self.error = 'No get sites in NetBox!'
             self.logger.error(self.error)
             return
 
-        vlans_out = self.__netbox.ipam.vlans.all()
+        vlans_out = self.__netbox_connection.ipam.vlans.all()
         if not vlans_out:
             self.error = 'No get vlans in NetBox!'
             self.logger.error(self.error)
@@ -122,9 +136,27 @@ class NetworkDevice:
             self.__netbox_vlans.update({site.slug: {}})
         for vlan in vlans_out:
             if not vlan.site:
-                self.error = f'Vlan ID {vlan.vid} has no Site!'
+                self.error = f'Vlan ID {vlan.vid} has no in Site ({self.site_slug})!'
+                self.logger.error(self.error)
                 return
             self.__netbox_vlans[vlan.site.slug].update({str(vlan.vid): vlan})
+
+    # Проверка существования Vlan и, при его наличии, возврат его объекта
+    def get_vlan_object(self, vid):
+        self.__get_vlans_from_netbox()
+
+        if self.error:
+            return
+
+        if self.site_slug not in self.__netbox_vlans:
+            self.error = f'Site Slug {self.site_slug} not found in NetBox'
+            return
+
+        if vid not in self.__netbox_vlans[self.site_slug]:
+            self.error = f'Vlan ID {vid} not found in NetBox (site {self.site_slug})'
+            return
+
+        return self.__netbox_vlans[self.site_slug][vid]
 
     def get_device_info(self, community_string=None):
         self.logger.info('Get Device Info')
@@ -135,31 +167,34 @@ class NetworkDevice:
             self.community_string = community_string
 
         # Если все необходимые параметры заданы
-        if self.community_string:
-            self.__create_SNMPDevice()
-
-            self.hostname, self.error = self.__snmp.getHostname()
-            if not self.error:
-                self.logger.info(f'Hostname: {self.hostname}')
-            else:
-                self.logger.error(f'Error get hostname: {self.error}')
-
-            if not self.error:
-                self.model, self.error = self.__snmp.getModel()
-                if not self.error:
-                    self.logger.info(f'Model: {self.model}')
-                else:
-                    self.logger.error(f'Error get model: {self.error}')
-
-            if not self.error:
-                self.serial_number, self.error = self.__snmp.getSerialNumber()
-                if not self.error:
-                    self.logger.info(f'Serial Number: {self.serial_number}')
-                else:
-                    self.logger.error(f'Error get serial number: {self.error}')
-        else:
+        if not self.community_string:
             self.error = 'Community string is Empty!'
             self.logger.error(self.error)
+            return
+
+        self.__create_SNMPDevice()
+
+        self.hostname, self.error = self.__snmp.getHostname()
+        if self.error:
+            self.error = f'Error get hostname: {self.error}'
+            self.logger.error(self.error)
+            return
+
+        self.logger.info(f'Hostname: {self.hostname}')
+
+        self.model, self.error = self.__snmp.getModel()
+        if self.error:
+            self.error = f'Error get model: {self.error}'
+            self.logger.error(self.error)
+            return
+        self.logger.info(f'Model: {self.model}')
+
+        self.serial_number, self.error = self.__snmp.getSerialNumber()
+        if self.error:
+            self.error = f'Error get serial number: {self.error}'
+            self.logger.error(self.error)
+            return
+        self.logger.info(f'Serial Number: {self.serial_number}')
 
     def create_netbox_device(self, site_slug=None, role=None):
         self.logger.info('Create Device in NetBox')
@@ -181,7 +216,7 @@ class NetworkDevice:
                 return
 
             # Check if the device already exists in NetBox
-            devices = self.__netbox.dcim.devices.filter(name=self.hostname, site=self.site_slug)
+            devices = self.__netbox_connection.dcim.devices.filter(name=self.hostname, site=self.site_slug)
             if devices:
                 self.logger.info(f"Device '{self.hostname}' already exists in NetBox (skipping creation)")
                 find_netbox_device = next(iter(devices))
@@ -191,23 +226,23 @@ class NetworkDevice:
                 else:
                     self.__netbox_device = find_netbox_device
             else:
-                netbox_device_type = self.__netbox.dcim.device_types.get(model=self.model)
+                netbox_device_type = self.__netbox_connection.dcim.device_types.get(model=self.model)
                 if not netbox_device_type:
                     self.error = f'Device type "{self.model}" not found in NetBox!'
                     return
 
-                netbox_site = self.__netbox.dcim.sites.get(slug=self.site_slug)
+                netbox_site = self.__netbox_connection.dcim.sites.get(slug=self.site_slug)
                 if not netbox_site:
                     self.error = f'Site slug "{self.site_slug}" not found in NetBox!'
                     return
 
-                netbox_device_role = self.__netbox.dcim.device_roles.get(name=self.role)
+                netbox_device_role = self.__netbox_connection.dcim.device_roles.get(name=self.role)
                 if not netbox_device_role:
                     self.error = f'Device role "{self.role}" not found in NetBox!'
                     return
 
                 self.logger.info(f"Device '{self.hostname}' creating in NetBox")
-                self.__netbox_device = self.__netbox.dcim.devices.create(
+                self.__netbox_device = self.__netbox_connection.dcim.devices.create(
                     name=self.hostname,
                     device_type=netbox_device_type.id,
                     serial=self.serial_number,
@@ -233,7 +268,7 @@ class NetworkDevice:
     def create_ip_interface(self, community_string=None, hostname=None):
         self.logger.info('Create IP interface and set to Device')
         self.error = ''
-        self.__netbox_device_interface = None
+        self.__netbox_device_sv_interfaces = []
         self.__netbox_device_ip_address = None
 
         # Устанавливаем значения классу, если заданы
@@ -252,9 +287,9 @@ class NetworkDevice:
 
             # Если объект устройства не задано, то ищем такое в NetBox
             if not self.__netbox_device:
-                self.__netbox_device = self.__netbox.dcim.devices.get(name=hostname)
+                self.__netbox_device = self.__netbox_connection.dcim.devices.get(name=hostname)
                 # Check if the device already exists in NetBox
-                devices = self.__netbox.dcim.devices.filter(name=self.hostname, site=self.site_slug)
+                devices = self.__netbox_connection.dcim.devices.filter(name=self.hostname, site=self.site_slug)
                 if devices:
                     self.__netbox_device = next(iter(devices))
 
@@ -270,28 +305,38 @@ class NetworkDevice:
             for SVI in SVIs:
 
                 # Check if the interface already exists in NetBox
-                self.__netbox_device_interface = self.__netbox.dcim.interfaces.get(name=SVI.description,
-                                                                                   device=self.__netbox_device.name)
-                if self.__netbox_device_interface:
+                netbox_device_interface = self.__netbox_connection.dcim.interfaces.get(name=SVI.description,
+                                                                                       device=self.__netbox_device.name)
+                self.__netbox_device_sv_interfaces += [netbox_device_interface]
+                if netbox_device_interface:
                     self.logger.info(
                         f"Interface '{SVI.description}' already exists in NetBox (skipping creation)")
                 else:
                     self.logger.info(f"Interface '{SVI.description}' creating in NetBox!")
-                    self.__netbox_device_interface = self.__netbox.dcim.interfaces.create(
+                    netbox_device_interface = self.__netbox_connection.dcim.interfaces.create(
                         name=SVI.description,
                         device=self.__netbox_device.id,
                         type="virtual",
                         mtu=SVI.MTU,
                         mac=SVI.MAC
                     )
-                    # TODO: Добавить привязку к Vlan
+
+                # Ищем номер Vlan в названии и если он не равен 1
+                vid_interface_out = re.search(r'(\d+)', netbox_device_interface.name)
+                if vid_interface_out.groups() and vid_interface_out.group(1) != '1':
+                    if self.error:
+                        return
+                    self.logger.info(f'Set Vlan {vid_interface_out.group(1)} to SVI {netbox_device_interface.name}')
+                    netbox_device_interface.mode = 'access'
+                    netbox_device_interface.untagged_vlan = self.get_vlan_object(vid=vid_interface_out.group(1))
+                    netbox_device_interface.save()
 
                 self.logger.info(f'IP Address: {SVI.ip_address}')
                 self.logger.info(f'Subnet Mask: {SVI.mask}')
                 self.logger.info(f'IP Address with Prefix: {SVI.ip_with_prefix}')
 
                 # Check if the IP address already exists in NetBox
-                self.__netbox_device_ip_address = self.__netbox.ipam.ip_addresses.get(
+                self.__netbox_device_ip_address = self.__netbox_connection.ipam.ip_addresses.get(
                     address=SVI.ip_with_prefix)
                 if self.__netbox_device_ip_address:
                     self.logger.info(
@@ -299,11 +344,11 @@ class NetworkDevice:
                 else:
                     self.logger.info(f"IP address '{SVI.ip_with_prefix}' creating in NetBox!")
                     # Create the IP address object in NetBox
-                    self.__netbox_device_ip_address = self.__netbox.ipam.ip_addresses.create(
+                    self.__netbox_device_ip_address = self.__netbox_connection.ipam.ip_addresses.create(
                         address=SVI.ip_with_prefix,
                         status='active',
                         assigned_object_type="dcim.interface",
-                        assigned_object_id=self.__netbox_device_interface.id,
+                        assigned_object_id=netbox_device_interface.id,
                     )
 
                 if SVI.ip_address == self.ip_address:
@@ -325,7 +370,7 @@ class NetworkDevice:
             self.logger.error(f'Error: {self.error}')
 
     def get_interfaces(self, community_string=None):
-        self.logger.info('Getting interfaces device')
+        self.logger.info('Getting interfaces')
         self.error = ''
 
         # Устанавливаем значения классу, если заданы
@@ -350,7 +395,7 @@ class NetworkDevice:
         self.logger.info(f'Found {len(self.interfaces)} interfaces')
 
     def send_to_netbox(self, interface_object: Interface):
-        self.logger.info(f"Index: {interface_object}")
+        self.logger.info(f"Send to NetBox: {interface_object}")
         self.error = ''
 
         if self.site_slug:
@@ -359,37 +404,26 @@ class NetworkDevice:
             if self.error:
                 return
 
-            # Получаем список Vlan'ов из NetBox
-            self.__get_vlans_from_netbox()
-            if self.error:
-                return
-
-            if self.site_slug not in self.__netbox_vlans:
-                self.error = f'Site Slug {self.site_slug} not found in NetBox'
-                return
-
             # Получаем внутренние объекты vlan access-интерфейсов из NetBox
             netbox_untagged_id = None
             if interface_object.untagged:
-                if interface_object.untagged not in self.__netbox_vlans[self.site_slug]:
-                    self.error = f'Vlan ID {interface_object.untagged} not found in NetBox (Site {self.site_slug})'
+                vlan_obj = self.get_vlan_object(vid=interface_object.untagged)
+                if self.error:
                     return
-                netbox_untagged_id = {"id": self.__netbox_vlans[self.site_slug][interface_object.untagged].id}
+                netbox_untagged_id = {"id": vlan_obj.id}
 
             # Получаем внутренние объекты vlan trunk-интерфейсов из NetBox
             netbox_tagged_vlans = []
             if interface_object.tagged:
                 for vid in interface_object.tagged:
-                    if vid not in self.__netbox_vlans[self.site_slug]:
-                        self.error = f'Vlan ID {vid} not found in NetBox (Site {self.site_slug})'
+                    vlan_obj = self.get_vlan_object(vid=vid)
+                    if self.error:
                         return
-                    netbox_tagged_vlans += [self.__netbox_vlans[self.site_slug][vid]]
+                    netbox_tagged_vlans += [vlan_obj]
 
             # Get the existing interface object
-            netbox_interface = self.__netbox.dcim.interfaces.get(device=self.__netbox_device.name,
-                                                                 name=interface_object.name)
-            # Временно! Сохраняет объект interface NetBox в класс
-            interface_object.object_interface_netbox = netbox_interface
+            netbox_interface = self.__netbox_connection.dcim.interfaces.get(device=self.__netbox_device.name,
+                                                                            name=interface_object.name)
 
             if netbox_interface:
                 netbox_interface.name = interface_object.name
@@ -407,8 +441,8 @@ class NetworkDevice:
                 netbox_interface.save()
                 self.logger.info(f"Data in interface {interface_object.index} UPDATED in NetBox")
             else:
-                self.__netbox_device_interface: pynetbox.models.dcim.Interfaces = \
-                    self.__netbox.dcim.interfaces.create(
+                netbox_interface: pynetbox.models.dcim.Interfaces = \
+                    self.__netbox_connection.dcim.interfaces.create(
                         device=self.__netbox_device.id,
                         name=interface_object.name,
                         mtu=interface_object.mtu,
@@ -418,10 +452,12 @@ class NetworkDevice:
                         type=interface_object.type,
                         untagged_vlan=netbox_untagged_id,
                     )
-                self.__netbox_device_interface.tagged_vlans = netbox_tagged_vlans
-                self.__netbox_device_interface.save()
-
+                netbox_interface.tagged_vlans = netbox_tagged_vlans
+                netbox_interface.save()
                 self.logger.info(f"Data in interface {interface_object.index} CREATED in NetBox")
+
+            # Временно! Сохраняет объект interface NetBox в класс
+            self.__netbox_device_sp_interfaces += [netbox_interface]
         else:
             self.error = "Site Slug is empty!"
             self.logger.error(f'Error: {self.error}')
@@ -445,6 +481,7 @@ class NetworkDevice:
         if self.error:
             return
         # Создаём/обновляем информацию интерфейсов устройства в NetBox
+        self.__netbox_device_sp_interfaces = []
         for interface_obj in self.interfaces:
             self.send_to_netbox(interface_obj)
             if self.error:
