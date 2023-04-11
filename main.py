@@ -38,7 +38,7 @@ for csv_device in devices_reader:
         continue
     logger.info(f"Processing device IP: {csv_device['ip device']}")
     network_device = NetworkDevice(
-        ip_address=csv_device['ip device'],
+        ip_address=csv_device['ip device'].strip(),
         community_string=csv_device['community'],
         site_slug=csv_device['site slug'],
         role=csv_device['role'],
