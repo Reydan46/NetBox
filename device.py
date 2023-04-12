@@ -326,9 +326,9 @@ class NetworkDevice:
                 self.__netbox_device_sv_interfaces += [netbox_device_interface]
                 if netbox_device_interface:
                     self.logger.info(
-                        f"Interface '{SVI.description}' already exists in NetBox (skipping creation)")
+                        f"SVI '{SVI.description}' already exists in NetBox (skipping creation)")
                 else:
-                    self.logger.info(f"Interface '{SVI.description}' creating in NetBox!")
+                    self.logger.info(f"SVI '{SVI.description}' creating in NetBox!")
                     netbox_device_interface = self.__netbox_connection.dcim.interfaces.create(
                         name=SVI.description,
                         device=self.__netbox_device.id,
