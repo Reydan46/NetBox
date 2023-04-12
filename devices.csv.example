@@ -1,2 +1,2 @@
-pass;ip device;username;enc_password;allowed ip;community;site slug;role
-;10.10.10.10;username;encrypted_password;10.10.7.10;public;ust;poe-switch
+act;ip device;community;site slug;role
+;10.10.10.10;public;ust;poe-switch

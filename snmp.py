@@ -231,7 +231,8 @@ class SNMPDevice:
             "cisco_sg_350": self.find_interfaces_cisco_sg,
             "huawei": self.find_interfaces_huawei,
             "zyxel": self.find_interfaces_zyxel,
-            "ubiquiti": self.find_interfaces_ubiquiti
+            "ubiquiti": self.find_interfaces_ubiquiti,
+            "arista": self.find_interfaces_arista,
         }
 
         flag_find_family = False
@@ -367,6 +368,9 @@ class SNMPDevice:
     def find_interfaces_ubiquiti(self):
         return []
 
+    def find_interfaces_arista(self):
+        return []
+
 
 # Класс для группировки регулярного выражения и формата его выводимого результата
 class RegexAction:
@@ -382,15 +386,14 @@ def hex2string(hex):
 
 
 def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False, custom_option=None, logger=None):
-    # snmpwalk -v 2c -c public -Ox -On 10.10.3.13 1.3.6.1.2.1.47.1.1.1.1.11
+    # snmpwalk -Pe -v 2c -c public -On -Ox 10.10.3.13 1.3.6.1.2.1.47.1.1.1.1.11
     out = []  # список для хранения результатов
     try:
-        process = ["snmpwalk", "-v", "2c", "-c", community_string, "-On", *(["-Ox"] if hex else []),
+        process = ["snmpwalk", "-Pe", "-v", "2c", "-c", community_string, f"-On{'x' if hex else ''}",
                    *([custom_option] if custom_option else []), ip_address, *([oid] if oid else [])]
         if logger: logger.debug(' '.join(process))
         # Помещаем результат команды snmpwalk в переменную
         result = subprocess.run(process, capture_output=True, text=True)
-        # result = subprocess.run(process, capture_output=True, text=True)
 
         # Обработка ошибок
         if result.returncode != 0:
