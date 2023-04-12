@@ -64,13 +64,8 @@ class SNMPDevice:
             # Объявляем logger, если таковой не задан
             self.logger = logging.getLogger('SNMPDevice')
 
-        self.models = {
-            "cisco_catalyst": [],
-            "cisco_sg_300": [],
-            "cisco_sg_350": [],
-            "huawei": [],
-            "zyxel": []
-        }
+        self.models = {}
+
         self.family_model = ""
 
         self.error = ''
@@ -79,6 +74,12 @@ class SNMPDevice:
             self.model = model
         self.community_string = community_string
         self.ip_address = ip_address
+
+    def getModels(self):
+        return self.models
+
+    def setModels(self, models):
+        self.models = models
 
     @staticmethod
     def __hex_to_binary(hex_str):
@@ -101,23 +102,17 @@ class SNMPDevice:
         return {interface: value for interface, value in indexes}
 
     def __model_lists_reader(self):
-        self.logger.info('Read models from file')
+        if not self.models:
+            self.logger.info('Read models from file')
 
-        self.models = {
-            "cisco_catalyst": [],
-            "cisco_sg_300": [],
-            "cisco_sg_350": [],
-            "huawei": [],
-            "zyxel": []
-        }
-        self.family_model = ""
+            self.family_model = ""
 
-        with open('model.lists', 'r') as f:
-            file = f.read()
+            with open('model.lists', 'r') as f:
+                file = f.read()
 
-        for line in file.split('\n'):
-            model_type, models_line = line.split(':')
-            self.models[model_type] = list(filter(None, models_line.split(',')))
+            for line in file.split('\n'):
+                model_type, models_line = line.split(':')
+                self.models.update({model_type: list(filter(None, models_line.split(',')))})
 
     def getValue(self, action):
         self.error = ''
@@ -213,7 +208,7 @@ class SNMPDevice:
             )]
         return SVIs, self.error
 
-    def getInterfaces(self):
+    def find_interfaces(self):
         self.error = ''
 
         if not self.model:
@@ -231,24 +226,25 @@ class SNMPDevice:
         self.logger.info(f'Find model "{self.model}" in model.lists')
         interfaces = []
         model_families = {
-            "cisco_catalyst": self.getInterfaces_cisco_catalyst,
-            "cisco_sg_300": self.getInterfaces_cisco_sg,
-            "cisco_sg_350": self.getInterfaces_cisco_sg,
-            "huawei": self.getInterfaces_huawei,
-            "zyxel": self.getInterfaces_zyxel
+            "cisco_catalyst": self.find_interfaces_cisco_catalyst,
+            "cisco_sg_300": self.find_interfaces_cisco_sg,
+            "cisco_sg_350": self.find_interfaces_cisco_sg,
+            "huawei": self.find_interfaces_huawei,
+            "zyxel": self.find_interfaces_zyxel,
+            "ubiquiti": self.find_interfaces_ubiquiti
         }
 
         flag_find_family = False
         for family, get_interfaces_func in model_families.items():
             if self.model in self.models[family]:
                 self.family_model = family
-                self.logger.info(f'Run block getInterfaces for "{self.family_model}"')
+                self.logger.info(f'Run block find_interfaces for "{self.family_model}"')
                 interfaces = get_interfaces_func()
                 flag_find_family = True
                 break
 
         if not flag_find_family:
-            self.error = f'Model {self.model} is not found in getInterfaces!'
+            self.error = f'Model {self.model} is not found in model.lists!'
 
         if self.error:
             return []
@@ -273,27 +269,36 @@ class SNMPDevice:
         mac_dict = self.__indexes_to_dict(mac_output)
 
         desc_output, self.error = \
-            snmpwalk(oid.general.si_description, self.community_string, self.ip_address, 'INDEX-DESC',
+            snmpwalk(oid.general.si_description, self.community_string, self.ip_address, 'INDEX-DESC-HEX', hex=True,
                      logger=self.logger)
         if self.error:
             return []
         desc_dict = self.__indexes_to_dict(desc_output)
 
+        vlans = []
         for interface in interfaces:
             interface.name = int_name_dict[interface.index]
             interface.mtu = mtu_dict[interface.index]
             interface.mac = mac_dict[interface.index]
-            interface.desc = desc_dict[interface.index]
+            interface.desc = hex2string(desc_dict[interface.index])
             # Предполагаем, что интерфейсы начинающиеся с "P" являются LAG
             if interface.name[0].lower() == 'p':
                 interface.type = 'lag'
 
-        return interfaces
+            if interface.untagged:
+                if interface.untagged not in vlans:
+                    vlans += [interface.untagged]
+            if interface.tagged:
+                for vid in interface.tagged:
+                    if vid not in vlans:
+                        vlans += [vid]
 
-    def getInterfaces_cisco_catalyst(self):
+        return interfaces, sorted(vlans, key=int)
+
+    def find_interfaces_cisco_catalyst(self):
         return []
 
-    def getInterfaces_cisco_sg(self):
+    def find_interfaces_cisco_sg(self):
         interfaces = []
         mode_port_output, self.error = \
             snmpwalk(oid.cisco_sg.mode_port, self.community_string, self.ip_address, 'INDEX-INT', logger=self.logger)
@@ -326,33 +331,40 @@ class SNMPDevice:
                 tag_port_dict[interface_index].append(vlan_id)
 
         for index, value in mode_port_dict.items():
+
             untagged = None
-            if index in untag_port_dict and \
-                    untag_port_dict[index] not in ['0', '1']:
+            # Если Vlan Untagged 0 или 1 то пропускаем
+            if index in untag_port_dict \
+                    and untag_port_dict[index] not in ['0', '1']:
                 untagged = untag_port_dict[index]
+
+            interfaces.append(Interface(
+                index=index,
+                untagged=untagged,
+            ))
+
             if value == oid.cisco_sg.mode_port_state[self.family_model]["access"]:
-                interfaces.append(Interface(
-                    index=index,
-                    untagged=untagged,
-                    mode='access',
-                ))
+                interfaces[-1].mode = 'access'
             elif value == oid.cisco_sg.mode_port_state[self.family_model]["tagged"]:
-                interfaces.append(Interface(
-                    index=index,
-                    tagged=tag_port_dict[index],
-                    untagged=untagged,
-                    mode='tagged',
-                ))
-                if interfaces[-1].tagged and interfaces[-1].untagged and \
-                        interfaces[-1].untagged in interfaces[-1].tagged:
+                interfaces[-1].mode = 'tagged'
+                interfaces[-1].tagged = tag_port_dict[index]
+
+                # Если Tagged и Untagged существуют
+                # и Vlan Untagged входит в список Tagged
+                # Удалим Vlan Untagged из списка Tagged
+                if interfaces[-1].tagged and interfaces[-1].untagged \
+                        and interfaces[-1].untagged in interfaces[-1].tagged:
                     interfaces[-1].tagged.remove(interfaces[-1].untagged)
 
         return interfaces
 
-    def getInterfaces_huawei(self):
+    def find_interfaces_huawei(self):
         return []
 
-    def getInterfaces_zyxel(self):
+    def find_interfaces_zyxel(self):
+        return []
+
+    def find_interfaces_ubiquiti(self):
         return []
 
 
@@ -361,6 +373,12 @@ class RegexAction:
     def __init__(self, pattern, action):
         self.pattern = pattern
         self.action = action
+
+
+def hex2string(hex):
+    if hex:
+        return "".join([chr(int(x, 16)) for x in hex.split()]).encode('latin1').decode('utf-8')
+    return ""
 
 
 def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False, custom_option=None, logger=None):
@@ -416,6 +434,11 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False, custom_o
                 r'.(\d+) = [\w\-]+: (([0-9A-Fa-f]{2} ?\n?){126,})',
                 lambda re_out: [re_out.group(1),
                                 re_out.group(2).strip().replace(" ", '').replace("\n", '').upper()]
+            ),
+            'INDEX-DESC-HEX': RegexAction(
+                r'.(\d+) = [\w\-]*:? ?"?(([0-9A-Fa-f]{2} ?\n?)*)"?',
+                lambda re_out: [re_out.group(1),
+                                re_out.group(2).strip().replace("\n", '').upper()]
             ),
             'MAC': RegexAction(
                 r': (([0-9A-Fa-f]{2} ?){6})',

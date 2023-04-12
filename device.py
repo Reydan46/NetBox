@@ -29,6 +29,8 @@ class NetworkDevice:
         self.__password_salt = None
         self.__password_decoder = None
 
+        self.models = {}
+
         self.hostname = ""
         self.model = ""
         self.serial_number = ""
@@ -37,24 +39,32 @@ class NetworkDevice:
 
         self.interfaces = []
 
-        self.community_string = ""
+        self.community_string = "public"
         self.error = ""
 
         # Сохраняем не None значения атрибутов
         self.ip_address = ip_address
         if community_string:
             self.community_string = community_string
-            self.__create_SNMPDevice()
+
         if site_slug:
             self.site_slug = site_slug
         if role:
             self.role = role
+
+        self.__create_SNMPDevice()
 
     def getModel(self):
         if self.model:
             return self.model
         else:
             return "Undefined"
+
+    def getModels(self):
+        return self.__snmp.getModels()
+
+    def setModels(self, models):
+        self.__snmp.setModels(models)
 
     def getNetboxConnection(self):
         return self.__netbox_connection
@@ -69,11 +79,7 @@ class NetworkDevice:
         self.__netbox_vlans = netbox_vlans
 
     def __create_SNMPDevice(self):
-        if not self.__snmp:
-            if not self.community_string:
-                self.error = 'Community String is empty!'
-                self.logger.error(self.error)
-                return None
+        if not self.__snmp or self.__snmp.community_string != self.community_string:
             self.logger.debug('Create SNMP Device')
             self.__snmp = SNMPDevice(
                 community_string=self.community_string,
@@ -134,6 +140,12 @@ class NetworkDevice:
 
         for site in site_out:
             self.__netbox_vlans.update({site.slug: {}})
+
+        # Если сайт отсуствует - ошибка
+        if self.site_slug not in self.__netbox_vlans:
+            self.error = f'Site Slug {self.site_slug} not found in NetBox'
+            return
+
         for vlan in vlans_out:
             if not vlan.site:
                 self.error = f'Vlan ID {vlan.vid} has no in Site ({self.site_slug})!'
@@ -146,10 +158,6 @@ class NetworkDevice:
         self.__get_vlans_from_netbox()
 
         if self.error:
-            return
-
-        if self.site_slug not in self.__netbox_vlans:
-            self.error = f'Site Slug {self.site_slug} not found in NetBox'
             return
 
         if vid not in self.__netbox_vlans[self.site_slug]:
@@ -165,14 +173,7 @@ class NetworkDevice:
 
         if community_string:
             self.community_string = community_string
-
-        # Если все необходимые параметры заданы
-        if not self.community_string:
-            self.error = 'Community string is Empty!'
-            self.logger.error(self.error)
-            return
-
-        self.__create_SNMPDevice()
+            self.__create_SNMPDevice()
 
         self.hostname, self.error = self.__snmp.getHostname()
         if self.error:
@@ -196,7 +197,7 @@ class NetworkDevice:
             return
         self.logger.info(f'Serial Number: {self.serial_number}')
 
-    def getRoleFromHostname(self):
+    def get_role_from_hostname(self):
         if self.hostname:
             self.logger.info("Get Role from Hostname")
             role_out = re.search(r'-([p]?sw)\d+', self.hostname)
@@ -208,7 +209,6 @@ class NetworkDevice:
                         self.role = 'Access switch'
                 if self.role:
                     self.logger.info(f'Found role: {self.role}')
-
 
     def create_netbox_device(self, site_slug=None, role=None):
         self.logger.info('Create Device in NetBox')
@@ -223,7 +223,7 @@ class NetworkDevice:
             self.role = role
 
         if not self.role:
-            self.getRoleFromHostname()
+            self.get_role_from_hostname()
 
         # Если все необходимые параметры заданы
         if self.hostname and self.model and self.serial_number and self.site_slug and self.role:
@@ -291,12 +291,11 @@ class NetworkDevice:
         # Устанавливаем значения классу, если заданы
         if community_string:
             self.community_string = community_string
+            self.__create_SNMPDevice()
         if hostname:
             self.hostname = hostname
 
-        if self.community_string and self.hostname and self.site_slug:
-            self.__create_SNMPDevice()
-
+        if self.hostname and self.site_slug:
             # Создаём подключение к NetBox
             self.__connect_to_netbox()
             if self.error:
@@ -378,9 +377,7 @@ class NetworkDevice:
                         except Exception as e:
                             self.error = str(e)
         else:
-            if not self.community_string:
-                self.error = "Community String is empty!"
-            elif not self.hostname:
+            if not self.hostname:
                 self.error = "Hostname is empty!"
             elif not self.site_slug:
                 self.error = "Site Slug is empty!"
@@ -393,22 +390,27 @@ class NetworkDevice:
         # Устанавливаем значения классу, если заданы
         if community_string:
             self.community_string = community_string
+            self.__create_SNMPDevice()
 
-        if not self.community_string:
-            self.error = "Community String is empty!"
-            self.logger.error(f'Error: {self.error}')
-            return
-
-        self.__create_SNMPDevice()
-
-        interfaces_out = self.__snmp.getInterfaces()
+        self.interfaces, self.vlans = self.__snmp.find_interfaces()
         self.error = self.__snmp.error
 
         if self.error:
             self.logger.error(f'Error: {self.error}')
             return
 
-        self.interfaces = interfaces_out
+        # Получаем список Vlan'ов в NetBox
+        self.__get_vlans_from_netbox()
+        # Проверяем все vlan id на наличие в netbox
+        vlans_error = []
+        for vid in self.vlans:
+            vlan_obj = self.get_vlan_object(vid=vid)
+            if not vlan_obj:
+                vlans_error += [vid]
+        if vlans_error:
+            self.error = f"Vlan ID's {','.join(vlans_error)} not found in NetBox (site {self.site_slug})"
+            return
+
         self.logger.info(f'Found {len(self.interfaces)} interfaces')
 
     def send_to_netbox(self, interface_object: Interface):
@@ -438,10 +440,9 @@ class NetworkDevice:
                         return
                     netbox_tagged_vlans += [vlan_obj]
 
-            # Get the existing interface object
+                    # Get the existing interface object
             netbox_interface = self.__netbox_connection.dcim.interfaces.get(device=self.__netbox_device.name,
                                                                             name=interface_object.name)
-
             if netbox_interface:
                 netbox_interface.name = interface_object.name
                 netbox_interface.mtu = interface_object.mtu
