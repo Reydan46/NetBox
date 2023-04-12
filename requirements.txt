@@ -3,3 +3,4 @@ netaddr~=0.8.0
 cryptography~=40.0.1
 wexpect~=4.0.0
 pynetbox~=7.0.1
+jinja2
