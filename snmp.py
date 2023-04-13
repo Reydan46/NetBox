@@ -6,6 +6,7 @@ import traceback
 from collections import defaultdict
 import oid.general
 import oid.cisco_sg
+import oid.cisco_catalyst
 
 
 # Виртуальный IP интерфейс
@@ -90,12 +91,12 @@ class SNMPDevice:
         return binary_str
 
     @staticmethod
-    def __binary_to_list(binary_str):
-        return [str(i + 1) for i, bit in enumerate(binary_str) if bit == '1']
+    def __binary_to_list(binary_str, inc=1):
+        return [str(i + inc) for i, bit in enumerate(binary_str) if bit == '1']
 
-    def __hex_to_binary_list(self, hex_str):
+    def __hex_to_binary_list(self, hex_str, inc=1):
         binary_str = self.__hex_to_binary(hex_str)
-        return self.__binary_to_list(binary_str)
+        return self.__binary_to_list(binary_str, inc)
 
     @staticmethod
     def __indexes_to_dict(indexes):
@@ -297,7 +298,65 @@ class SNMPDevice:
         return interfaces, sorted(vlans, key=int)
 
     def find_interfaces_cisco_catalyst(self):
-        return []
+        interfaces = []
+        mode_port_output, self.error = \
+            snmpwalk(oid.cisco_catalyst.mode_port, self.community_string, self.ip_address, 'INDEX-INT',
+                     logger=self.logger)
+
+        if self.error:
+            return
+
+        mode_port_dict = self.__indexes_to_dict(mode_port_output)
+
+        native_port_output, self.error = \
+            snmpwalk(oid.cisco_catalyst.native_port, self.community_string, self.ip_address, 'INDEX-INT',
+                     logger=self.logger)
+
+        if self.error:
+            return
+
+        native_port_dict = self.__indexes_to_dict(native_port_output)
+
+        untag_port_output, self.error = \
+            snmpwalk(oid.cisco_catalyst.untag_port, self.community_string, self.ip_address, 'INDEX-INT',
+                     logger=self.logger)
+
+        if self.error:
+            return
+
+        untag_port_dict = self.__indexes_to_dict(untag_port_output)
+
+        hex_tag_port_output, error = \
+            snmpwalk(oid.cisco_catalyst.hex_tag_port, self.community_string, self.ip_address, 'INDEX-HEX',
+                     logger=self.logger)
+
+        if self.error:
+            return
+
+        tag_port_dict = defaultdict(list)
+        for port_index, hex_vlans in hex_tag_port_output:
+            for vid in self.__hex_to_binary_list(hex_vlans, 0):
+                if vid == '1':
+                    continue
+                tag_port_dict[port_index].append(vid)
+
+        for index, value in mode_port_dict.items():
+
+            if value in oid.cisco_catalyst.mode_port_state["access"]:
+                interfaces.append(Interface(
+                    index=index,
+                    untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
+                    mode='access',
+                ))
+            elif value in oid.cisco_catalyst.mode_port_state["tagged"]:
+                interfaces.append(Interface(
+                    index=index,
+                    untagged=native_port_dict[index] if native_port_dict[index] != '1' else None,
+                    mode='tagged',
+                    tagged=tag_port_dict[index],
+                ))
+
+        return interfaces
 
     def find_interfaces_cisco_sg(self):
         interfaces = []
