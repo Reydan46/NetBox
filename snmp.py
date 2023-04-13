@@ -220,7 +220,7 @@ class SNMPDevice:
             self.error = 'Community string is Empty!'
 
         if self.error:
-            return []
+            return [], []
 
         self.__model_lists_reader()
 
@@ -233,7 +233,6 @@ class SNMPDevice:
             "huawei": self.find_interfaces_huawei,
             "zyxel": self.find_interfaces_zyxel,
             "ubiquiti": self.find_interfaces_ubiquiti,
-            "arista": self.find_interfaces_arista,
         }
 
         flag_find_family = False
@@ -249,32 +248,32 @@ class SNMPDevice:
             self.error = f'Model {self.model} is not found in model.lists!'
 
         if self.error:
-            return []
+            return [], []
 
         int_name_output, self.error = \
             snmpwalk(oid.general.si_int_name, self.community_string, self.ip_address, 'INDEX-DESC', logger=self.logger)
         if self.error:
-            return []
+            return [], []
         int_name_dict = self.__indexes_to_dict(int_name_output)
 
         mtu_output, self.error = \
             snmpwalk(oid.general.si_mtu, self.community_string, self.ip_address, 'INDEX-INT', logger=self.logger)
         if self.error:
-            return []
+            return [], []
         mtu_dict = self.__indexes_to_dict(mtu_output)
 
         mac_output, self.error = \
             snmpwalk(oid.general.si_mac, self.community_string, self.ip_address, 'INDEX-MAC', hex=True,
                      logger=self.logger)
         if self.error:
-            return []
+            return [], []
         mac_dict = self.__indexes_to_dict(mac_output)
 
         desc_output, self.error = \
             snmpwalk(oid.general.si_description, self.community_string, self.ip_address, 'INDEX-DESC-HEX', hex=True,
                      logger=self.logger)
         if self.error:
-            return []
+            return [], []
         desc_dict = self.__indexes_to_dict(desc_output)
 
         vlans = []
@@ -452,9 +451,6 @@ class SNMPDevice:
         return []
 
     def find_interfaces_ubiquiti(self):
-        return []
-
-    def find_interfaces_arista(self):
         return []
 
 
