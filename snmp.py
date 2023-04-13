@@ -333,6 +333,13 @@ class SNMPDevice:
         if self.error:
             return
 
+        hex_tag_noneg_port_output, error = \
+            snmpwalk(oid.cisco_catalyst.hex_tag_noneg_port, self.community_string, self.ip_address, 'INDEX-HEX',
+                     logger=self.logger)
+
+        if self.error:
+            return
+
         tag_port_dict = defaultdict(list)
         for port_index, hex_vlans in hex_tag_port_output:
             for vid in self.__hex_to_binary_list(hex_vlans, 0):
@@ -340,20 +347,35 @@ class SNMPDevice:
                     continue
                 tag_port_dict[port_index].append(vid)
 
-        for index, value in mode_port_dict.items():
+        tag_noneg_port_dict = defaultdict(list)
+        for port_index, hex_vlans in hex_tag_noneg_port_output:
+            for vid in self.__hex_to_binary_list(hex_vlans, 0):
+                if vid == '1':
+                    continue
+                tag_noneg_port_dict[port_index].append(vid)
 
-            if value in oid.cisco_catalyst.mode_port_state["access"]:
+        for index, value in mode_port_dict.items():
+            if value == oid.cisco_catalyst.mode_port_state["access"]:
                 interfaces.append(Interface(
                     index=index,
                     untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
                     mode='access',
                 ))
-            elif value in oid.cisco_catalyst.mode_port_state["tagged"]:
+            elif value == oid.cisco_catalyst.mode_port_state["tagged"]:
                 interfaces.append(Interface(
                     index=index,
                     untagged=native_port_dict[index] if native_port_dict[index] != '1' else None,
                     mode='tagged',
                     tagged=tag_port_dict[index],
+                ))
+                if not interfaces[-1].tagged:
+                    interfaces[-1].mode = 'tagged-all'
+            elif value == oid.cisco_catalyst.mode_port_state["tagged-noneg"]:
+                interfaces.append(Interface(
+                    index=index,
+                    untagged=native_port_dict[index] if native_port_dict[index] != '1' else None,
+                    mode='tagged',
+                    tagged=tag_noneg_port_dict[index],
                 ))
                 if not interfaces[-1].tagged:
                     interfaces[-1].mode = 'tagged-all'
