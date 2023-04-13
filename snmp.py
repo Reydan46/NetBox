@@ -352,9 +352,11 @@ class SNMPDevice:
                 interfaces.append(Interface(
                     index=index,
                     untagged=native_port_dict[index] if native_port_dict[index] != '1' else None,
-                    mode='tagged' if tag_port_dict[index] else 'tagged-all',
+                    mode='tagged',
                     tagged=tag_port_dict[index],
                 ))
+                if not interfaces[-1].tagged:
+                    interfaces[-1].mode = 'tagged-all'
 
         return interfaces
 
@@ -404,9 +406,9 @@ class SNMPDevice:
             ))
 
             if value == oid.cisco_sg.mode_port_state[self.family_model]["access"]:
-                interfaces[-1].mode = 'tagged' if tag_port_dict[index] else 'tagged-all'
+                interfaces[-1].mode = 'access'
             elif value == oid.cisco_sg.mode_port_state[self.family_model]["tagged"]:
-                interfaces[-1].mode = 'tagged' if tag_port_dict[index] else 'tagged-all'
+                interfaces[-1].mode = 'tagged'
                 interfaces[-1].tagged = tag_port_dict[index]
 
                 # Если Tagged и Untagged существуют
@@ -415,6 +417,9 @@ class SNMPDevice:
                 if interfaces[-1].tagged and interfaces[-1].untagged \
                         and interfaces[-1].untagged in interfaces[-1].tagged:
                     interfaces[-1].tagged.remove(interfaces[-1].untagged)
+
+            if not interfaces[-1].tagged:
+                interfaces[-1].mode = 'tagged-all'
 
         return interfaces
 
