@@ -1,6 +1,6 @@
-prettytable~=3.6.0
+prettytable==3.7.0
 netaddr~=0.8.0
 cryptography~=40.0.1
 wexpect~=4.0.0
 pynetbox~=7.0.1
-jinja2
+colorama~=0.4.6
