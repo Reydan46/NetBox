@@ -1,7 +1,12 @@
 import os
 import sys
 import logging
+from string import Formatter
+
 from prettytable import PrettyTable
+from colorama import init, Fore
+
+init()
 
 current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(current)
@@ -27,11 +32,11 @@ logger.addHandler(c_handler)
 
 
 def red(text):
-    return f'\033[31m{text}\033[39m'
+    return f'{Fore.RED}{text}{Fore.RESET}'
 
 
 def green(text):
-    return f'\033[92m{text}\033[39m'
+    return f'{Fore.GREEN}{text}{Fore.RESET}'
 
 
 len_line_print = 3
