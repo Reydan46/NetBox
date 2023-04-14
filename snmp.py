@@ -146,7 +146,7 @@ class SNMPDevice:
         if self.error:
             return None, self.error
 
-        re_out = re.search(r'(\b[A-Z][A-Z0-9]{3,}-[A-Z0-9]{2,6}\b)', value[0])
+        re_out = re.search(r'(\b[A-Z][A-Z0-9]{2,}-[A-Z0-9]{2,8}\b)', value[0])
         self.model = re_out.group(1) if re_out else ''
 
         if not self.model:
@@ -467,7 +467,8 @@ def hex2string(hex):
     return ""
 
 
-def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False, custom_option=None, logger=None):
+def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False, custom_option=None, timeout_process=None,
+             logger=None):
     # snmpwalk -Pe -v 2c -c public -On -Ox 10.10.3.13 1.3.6.1.2.1.47.1.1.1.1.11
     out = []  # список для хранения результатов
     try:
@@ -475,11 +476,11 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False, custom_o
                    *([custom_option] if custom_option else []), ip_address, *([oid] if oid else [])]
         if logger: logger.debug(' '.join(process))
         # Помещаем результат команды snmpwalk в переменную
-        result = subprocess.run(process, capture_output=True, text=True)
+        result = subprocess.run(process, capture_output=True, text=True, timeout=timeout_process)
 
         # Обработка ошибок
         if result.returncode != 0:
-            return [], f'Fail SNMP (oid {oid})! Return code: {result.returncode}'
+            return result.stdout, f'Fail SNMP (oid {oid})! Return code: {result.returncode}'
         elif 'No Such Object' in result.stdout:
             return [], f'No Such Object available on this agent at this OID ({oid})'
         elif 'No Such Instance currently exists' in result.stdout:
@@ -554,6 +555,15 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False, custom_o
                     out += [output]
 
         return out, ''
+    except subprocess.TimeoutExpired as timeErr:
+        if len(timeErr.stdout) > 0:
+            # Построчно обрабатываем вывод snmpwalk
+            for lineSNMP in timeErr.stdout[1:].split('\n.'):
+                # Игнорируем пустые строки
+                if not lineSNMP:
+                    continue
+                out += [lineSNMP]
+        return out, str(timeErr)
     except Exception as e:
         return out, str(e)
         # return out, traceback.print_exc()
