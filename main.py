@@ -1,9 +1,11 @@
-import sys
-import logging
 import csv
-from device import NetworkDevice
-from prettytable import PrettyTable
+import logging
+import sys
 from datetime import datetime
+
+from prettytable import ALL, PrettyTable
+
+from device import NetworkDevice
 
 logger = logging.getLogger('NetBox')
 
@@ -13,14 +15,16 @@ logger.setLevel(logging.DEBUG)
 # logger.setLevel(logging.ERROR)
 
 c_handler = logging.StreamHandler(sys.stdout)
-c_format = logging.Formatter("[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
+c_format = logging.Formatter(
+    "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
 c_handler.setFormatter(c_format)
 logger.addHandler(c_handler)
 
-# f_handler = logging.FileHandler('NetBox.log', mode='w')
-# f_format = logging.Formatter("[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
-# f_handler.setFormatter(f_format)
-# logger.addHandler(f_handler)
+f_handler = logging.FileHandler('NetBox.log', mode='w')
+f_format = logging.Formatter(
+    "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
+f_handler.setFormatter(f_format)
+logger.addHandler(f_handler)
 
 # logger.debug('logger.debug')
 # logger.info('logger.info')
@@ -52,7 +56,8 @@ devices_reader.__init__(devices_file, delimiter=";")
 for csv_device in devices_reader:
     if (mode == 'exclude' and csv_device['act'] == '-') or \
             (mode == 'include' and csv_device['act'] != '+'):
-        logger.info(f"Passed device IP: {csv_device['ip device']}\n" + '#' * 120)
+        logger.info(
+            f"Passed device IP: {csv_device['ip device']}\n" + '#' * 120)
         continue
     logger.info(f"Processing device IP: {csv_device['ip device']}")
 
@@ -79,10 +84,13 @@ for csv_device in devices_reader:
 
 # Если были ошибки с устройствами - выводим
 if devices_with_error:
-    table = PrettyTable()
-    table.field_names = ["IP", "Model", "Error"]
+    table = PrettyTable(["IP", "Model", "Error"])
+    table.align["Error"] = "l"
+    table.max_width = 70
+    table.valign["Error"] = "t"
     for error_device in devices_with_error:
-        table.add_row([error_device.ip_address, error_device.getModel(), error_device.error])
+        table.add_row([error_device.ip_address,
+                      error_device.getModel(), error_device.error])
     logger.info(f"The following devices had errors:\n{table}")
 else:
     logger.info("All devices were successfully created in NetBox")
