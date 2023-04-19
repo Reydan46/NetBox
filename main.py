@@ -86,7 +86,7 @@ for csv_device in devices_reader:
 if devices_with_error:
     table = PrettyTable(["IP", "Model", "Error"])
     table.align["Error"] = "l"
-    table.max_width = 70
+    table.max_width = 75
     table.valign["Error"] = "t"
     for error_device in devices_with_error:
         table.add_row([error_device.ip_address,
