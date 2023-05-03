@@ -58,13 +58,31 @@ class Interface:
 
 
 class SNMPDevice:
+    """
+    SNMPDevice class defines a device for SNMP communication.
+    """
+    
     def __init__(self, community_string, ip_address, model=None, logger=None):
+        """
+        Initialize SNMPDevice class with necessary parameters.
+
+        :param community_string: str
+            A string defining the community for SNMP communication.
+        :param ip_address: str
+            IP address of the SNMP device.
+        :param model: str, optional
+            Model of SNMP device. Default is None.
+        :param logger: logging.Logger, optional
+            Logger object to be used for logging. If not specified, a new logger will be created.
+        """
+
+        # Логгер
         if logger:
             self.logger = logger
         else:
-            # Объявляем logger, если таковой не задан
             self.logger = logging.getLogger('SNMPDevice')
 
+        # Dictionary for storing device's models
         self.models = {}
 
         self.family_model = ""

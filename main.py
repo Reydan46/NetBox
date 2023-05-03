@@ -7,33 +7,40 @@ from prettytable import ALL, PrettyTable
 
 from device import NetworkDevice
 
+# Initialize logger with the name 'NetBox'
 logger = logging.getLogger('NetBox')
 
+# Set logging level (uncomment the desired level)
 logger.setLevel(logging.DEBUG)
 # logger.setLevel(logging.INFO)
 # logger.setLevel(logging.WARNING)
 # logger.setLevel(logging.ERROR)
 
+# Configure console (stream) handler to print log messages
 c_handler = logging.StreamHandler(sys.stdout)
 c_format = logging.Formatter(
     "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
 c_handler.setFormatter(c_format)
 logger.addHandler(c_handler)
 
+# Configure file handler to store log messages in 'NetBox.log' with mode 'w' (overwrite)
 f_handler = logging.FileHandler('NetBox.log', mode='w')
 f_format = logging.Formatter(
     "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
 f_handler.setFormatter(f_format)
 logger.addHandler(f_handler)
 
+# Uncomment the following lines to test different logging levels
 # logger.debug('logger.debug')
 # logger.info('logger.info')
 # logger.warning('logger.warning')
 # logger.error('logger.error')
 # logger.exception('logger.exception')
 
+# Сохраняем текущее время для расчета времени выполнения скрипта
 start_time = datetime.now()
 
+# Читаем csv файл со списком устройств
 devices_with_error = []
 devices_file = open('devices.csv', newline='')
 devices_reader = csv.DictReader(devices_file, delimiter=';')
@@ -41,26 +48,34 @@ netbox_vlans = None
 netbox_connection = None
 models = {}
 
-mode = 'all'
+# Читаем столбец действия (act)
+# "+" - работать только с этим хостом
+# "-" - исключить хост из обработки
+# Note: "плюсы" имеют приоритет перед "минусами"
+act = 'all'
 for csv_device in devices_reader:
     if csv_device['act'] == '+':
-        mode = 'include'
+        act = 'include'
         break
     elif csv_device['act'] == '-':
-        mode = 'exclude'
+        act = 'exclude'
 
-# Переинициализируем файл устройств
+# Возврат в начало файла
 devices_file.seek(0)
 devices_reader.__init__(devices_file, delimiter=";")
 
+# Проходим по списку девайсов из csv
 for csv_device in devices_reader:
-    if (mode == 'exclude' and csv_device['act'] == '-') or \
-            (mode == 'include' and csv_device['act'] != '+'):
+    # Условия для пропуска устройства
+    if (act == 'exclude' and csv_device['act'] == '-') or \
+            (act == 'include' and csv_device['act'] != '+'):
         logger.info(
             f"Passed device IP: {csv_device['ip device']}\n" + '#' * 120)
         continue
+    
     logger.info(f"Processing device IP: {csv_device['ip device']}")
-
+    
+    # Создаем объект класса device.NetworkDevice с параметрами полученными из csv
     network_device = NetworkDevice(
         ip_address=csv_device['ip device'].strip(),
         community_string=csv_device['community'],
@@ -68,18 +83,19 @@ for csv_device in devices_reader:
         role=csv_device['role'],
         logger=logger
     )
+    
     if not network_device.error:
         network_device.setModels(models)
         network_device.setNetboxConnection(netbox_connection)
         network_device.setNetboxVlans(netbox_vlans)
-
         network_device.ConfigureInNetBox()
-
         models = network_device.getModels()
         netbox_connection = network_device.getNetboxConnection()
         netbox_vlans = network_device.getNetboxVlans()
+        
     if network_device.error:
         devices_with_error += [network_device]
+    
     logger.info('End processing device\n' + '#' * 120)
 
 # Если были ошибки с устройствами - выводим

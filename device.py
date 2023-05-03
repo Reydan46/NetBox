@@ -9,14 +9,28 @@ import logging
 
 class NetworkDevice:
     def __init__(self, ip_address, community_string=None, site_slug=None, role=None, logger=None):
+        """
+        Initializes a new NetworkDevice object with provided IP address and optional parameters.
+        Sets up the logger, SNMPDevice configuration, and NetBox connection.
+        
+        Args:
+        ip_address (str): The IP address of the network device.
+        community_string (str, optional): The SNMP community string for the device. Defaults to "public".
+        site_slug (str, optional): The NetBox site slug for the device. Defaults to None.
+        role (str, optional): The device role. Defaults to None.
+        logger (logging.Logger, optional): A logger for debugging. Defaults to None, which creates a default logger.
+        """
+        
         # Проверяем наличие логгера
         if logger:
             self.logger = logger
         else:
             self.logger = logging.getLogger('NetworkDevice')
 
+        # Initialize SNMPDevice and related attributes
         self.__snmp: SNMPDevice = None
 
+        # Initialize NetBox connection and related attributes
         self.__netbox_connection: pynetbox.core.api.Api = None
         self.__netbox_url = None
         self.__netbox_token = None
@@ -26,19 +40,20 @@ class NetworkDevice:
         self.__netbox_device_ip_address = None
         self.__netbox_vlans = {}
 
+        # Initialize password-related attributes
         self.__password_salt = None
         self.__password_decoder = None
 
+        # Initialize dictionaries and device-related attributes
         self.models = {}
-
         self.hostname = ""
         self.model = ""
         self.serial_number = ""
         self.site_slug = ""
         self.role = ""
-
         self.interfaces = []
 
+        # Initialize SNMP community string and error attributes
         self.community_string = "public"
         self.error = ""
 
@@ -46,12 +61,12 @@ class NetworkDevice:
         self.ip_address = ip_address
         if community_string:
             self.community_string = community_string
-
         if site_slug:
             self.site_slug = site_slug
         if role:
             self.role = role
 
+        # Возвращает SNMPDevice объект в атрибут __snmp
         self.__create_SNMPDevice()
 
     def getModel(self):
@@ -79,6 +94,11 @@ class NetworkDevice:
         self.__netbox_vlans = netbox_vlans
 
     def __create_SNMPDevice(self):
+        """
+        Create an SNMPDevice if one does not already exist or if the community string has changed.
+
+        :return: The created or existing SNMPDevice.
+        """
         if not self.__snmp or self.__snmp.community_string != self.community_string:
             self.logger.debug('Create SNMP Device')
             self.__snmp = SNMPDevice(
