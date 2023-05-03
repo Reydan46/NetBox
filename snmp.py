@@ -315,48 +315,55 @@ class SNMPDevice:
         return interfaces, sorted(vlans, key=int)
 
     def find_interfaces_cisco_catalyst(self):
+        """
+        This function finds the interfaces in a Cisco Catalyst device and returns them in a list.
+        It does this by using SNMP to walk through the OID tree of the device and extract the relevant information.
+        The function returns a list of Interface objects.
+        """
         interfaces = []
+        
+        # Use SNMP to get the CISCO-VTP-MIB.vlanTrunkPortDynamicState
         mode_port_output, self.error = \
             snmpwalk(oid.cisco_catalyst.mode_port, self.community_string, self.ip_address, 'INDEX-INT',
                      logger=self.logger)
-
         if self.error:
             return
-
+        # Convert mode_port_output to a dictionary
         mode_port_dict = self.__indexes_to_dict(mode_port_output)
 
+        # Use SNMP to get the CISCO-VTP-MIB.vlanTrunkPortNativeVlan
         native_port_output, self.error = \
             snmpwalk(oid.cisco_catalyst.native_port, self.community_string, self.ip_address, 'INDEX-INT',
                      logger=self.logger)
-
         if self.error:
             return
-
+        # Convert native_port_output to a dictionary
         native_port_dict = self.__indexes_to_dict(native_port_output)
 
+        # Use SNMP to get CISCO-VLAN-MEMBERSHIP-MIB.vmVlan
         untag_port_output, self.error = \
             snmpwalk(oid.cisco_catalyst.untag_port, self.community_string, self.ip_address, 'INDEX-INT',
                      logger=self.logger)
-
         if self.error:
             return
-
+        # Convert untag_port_output to a dictionary
         untag_port_dict = self.__indexes_to_dict(untag_port_output)
 
+        # Use SNMP to get CISCO-VTP-MIB.vlanTrunkPortVlansXmitJoined
         hex_tag_port_output, error = \
             snmpwalk(oid.cisco_catalyst.hex_tag_port, self.community_string, self.ip_address, 'INDEX-HEX',
                      logger=self.logger)
-
         if self.error:
             return
 
+        # Use SNMP to get the CISCO-VTP-MIB.vlanTrunkPortVlansEnabled
         hex_tag_noneg_port_output, error = \
             snmpwalk(oid.cisco_catalyst.hex_tag_noneg_port, self.community_string, self.ip_address, 'INDEX-HEX',
                      logger=self.logger)
-
         if self.error:
             return
 
+        # Convert hex_tag_port_output to a dictionary
         tag_port_dict = defaultdict(list)
         for port_index, hex_vlans in hex_tag_port_output:
             for vid in self.__hex_to_binary_list(hex_vlans, 0):
@@ -364,6 +371,7 @@ class SNMPDevice:
                     continue
                 tag_port_dict[port_index].append(vid)
 
+        # Convert hex_tag_noneg_port_output to a dictionary
         tag_noneg_port_dict = defaultdict(list)
         for port_index, hex_vlans in hex_tag_noneg_port_output:
             for vid in self.__hex_to_binary_list(hex_vlans, 0):
@@ -371,6 +379,7 @@ class SNMPDevice:
                     continue
                 tag_noneg_port_dict[port_index].append(vid)
 
+        # For each interface, determine its type (access, tagged, or tagged-all) and add it to the interfaces list
         for index, value in mode_port_dict.items():
             if value == oid.cisco_catalyst.mode_port_state["access"]:
                 interfaces.append(Interface(
