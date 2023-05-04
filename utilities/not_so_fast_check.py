@@ -107,7 +107,7 @@ def detect_type(ip_address, logger):
 
         name_oid = 'oid.general.si_mac'
         logger.info(oid_name(name_oid))
-        output, error = snmpwalk(oid.general.si_mac, 'public', ip_address, 'Debug', logger=logger,
+        output, error = snmpwalk(oid.general.si_mac, 'public', ip_address, 'Debug', hex=True, logger=logger,
                                  timeout_process=timeout_process)
         result.append([name_oid, fail() if error else success()])
         logger.debug('Output:\n' + '\n'.join(output[:len_line_print]) + '\n')
@@ -231,6 +231,6 @@ while True:
         table.add_row(line)
     logger.info(f"Check result:\n{table}")
     if oidType:
-        logger.info(f'Detected type: {Fore.LIGHTYELLOW_EX}{oidType}{Fore.RESET}')
+        logger.info(f'{Fore.LIGHTYELLOW_EX}{ip_address}{Fore.RESET} - Detected type: {Fore.LIGHTYELLOW_EX}{oidType}{Fore.RESET}')
     else:
-        logger.error(f'{Fore.RED}No detected type!{Fore.RESET}')
+        logger.error(f'{Fore.LIGHTYELLOW_EX}{ip_address}{Fore.RESET} - {Fore.RED}No detected type!{Fore.RESET}')
