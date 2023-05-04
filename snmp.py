@@ -314,30 +314,6 @@ class SNMPDevice:
 
         return interfaces, sorted(vlans, key=int)
 
-    def find_interfaces_cisco_catalyst(self):
-        """
-        This function finds the interfaces in a Cisco Catalyst device and returns them in a list.
-        It does this by using SNMP to walk through the OID tree of the device and extract the relevant information.
-        The function returns a list of Interface objects.
-        """
-        interfaces = []
-
-        mode_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.mode_port, 'INDEX-INT')
-        native_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.native_port, 'INDEX-INT')
-        untag_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.untag_port, 'INDEX-INT')
-        tag_port_dict = self.__get_tag_dict(oid.cisco_catalyst.hex_tag_port)
-        tag_noneg_port_dict = self.__get_tag_dict(oid.cisco_catalyst.hex_tag_noneg_port)
-
-        for index, value in mode_port_dict.items():
-            if value == oid.cisco_catalyst.mode_port_state["access"]:
-                interfaces.append(self.__create_interface_access(index, untag_port_dict))
-            elif value == oid.cisco_catalyst.mode_port_state["tagged"]:
-                interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_port_dict))
-            elif value == oid.cisco_catalyst.mode_port_state["tagged-noneg"]:
-                interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_noneg_port_dict))
-
-        return interfaces
-
     def __get_snmp_dict(self, oid, snmp_type):
         """
         This is a helper function that uses SNMP to get a dictionary of the specified OID.
@@ -347,7 +323,7 @@ class SNMPDevice:
             return {}
         return self.__indexes_to_dict(output)
 
-    def __get_tag_dict(self, oid):
+    def __get_tag_dict_by_port(self, oid):
         """
         This is a helper function that uses SNMP to get a dictionary of the specified OID and convert it to a tag dictionary.
         """
@@ -362,13 +338,31 @@ class SNMPDevice:
                 tag_dict[port_index].append(vid)
         return tag_dict
 
+    def __get_tag_dict_by_vlan(self, oid):
+        """
+        Helper function to get a dictionary of specified OID and convert it to a tag port dictionary.
+        """
+        output, self.error = snmpwalk(oid, self.community_string, self.ip_address, 'INDEX-HEX',
+                                      logger=self.logger)
+        if self.error:
+            return {}
+
+        tag_dict = defaultdict(list)
+        for vlan_id, hex_indexes in output:
+            if vlan_id == '1':
+                continue
+            for interface_index in self.__hex_to_binary_list(hex_indexes):
+                tag_dict[interface_index].append(vlan_id)
+
+        return tag_dict
+
     def __create_interface_access(self, index, untag_port_dict):
         """
         This is a helper function that creates an access interface object.
         """
         return Interface(
             index=index,
-            untagged=untag_port_dict[index] if untag_port_dict[index] != '1' else None,
+            untagged=untag_port_dict[index] if index in untag_port_dict and untag_port_dict[index] != '1' else None,
             mode='access',
         )
 
@@ -376,76 +370,68 @@ class SNMPDevice:
         """
         This is a helper function that creates a tagged interface object.
         """
-        interface = Interface(
-            index=index,
-            untagged=native_port_dict[index] if native_port_dict[index] not in ('1', '0') else None,
-            mode='tagged',
-            tagged=tag_dict[index],
-        )
-        if not interface.tagged:
-            interface.mode = 'tagged-all'
-        return interface
+        untagged = native_port_dict.get(index)
+        if untagged in ('1', '0'):
+            untagged = None
+    
+        tagged = tag_dict.get(index, [])
+        mode = 'tagged'
+        if (len(tagged) == 1 and tagged[0] == untagged) or not tagged:
+            mode = 'tagged-all'
+        return Interface(index=index, untagged=untagged, mode=mode, tagged=tagged)
 
-    def find_interfaces_cisco_sg(self):
+    def find_interfaces_cisco_catalyst(self):
+        """
+        This function finds the interfaces in a Cisco Catalyst device and returns them in a list.
+        It does this by using SNMP to walk through the OID tree of the device and extract the relevant information.
+        The function returns a list of Interface objects.
+        """
         interfaces = []
-        mode_port_output, self.error = \
-            snmpwalk(oid.cisco_sg.mode_port, self.community_string, self.ip_address, 'INDEX-INT', logger=self.logger)
 
-        if self.error:
-            return
-
-        mode_port_dict = self.__indexes_to_dict(mode_port_output)
-
-        untag_port_output, self.error = \
-            snmpwalk(oid.cisco_sg.untag_port[self.family_model], self.community_string, self.ip_address, 'INDEX-INT',
-                     logger=self.logger)
-
-        if self.error:
-            return
-
-        untag_port_dict = self.__indexes_to_dict(untag_port_output)
-
-        hex_tag_port_output, error = \
-            snmpwalk(oid.cisco_sg.hex_tag_port, self.community_string, self.ip_address, 'INDEX-HEX', logger=self.logger)
-
-        if self.error:
-            return
-
-        tag_port_dict = defaultdict(list)
-        for vlan_id, hex_indexes in hex_tag_port_output:
-            if vlan_id == '1':
-                continue
-            for interface_index in self.__hex_to_binary_list(hex_indexes):
-                tag_port_dict[interface_index].append(vlan_id)
+        mode_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.mode_port, 'INDEX-INT')
+        native_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.native_port, 'INDEX-INT')
+        untag_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.untag_port, 'INDEX-INT')
+        tag_port_dict = self.__get_tag_dict_by_port(oid.cisco_catalyst.hex_tag_port)
+        tag_noneg_port_dict = self.__get_tag_dict_by_port(oid.cisco_catalyst.hex_tag_noneg_port)
 
         for index, value in mode_port_dict.items():
+            if value == oid.cisco_catalyst.mode_port_state["access"]:
+                interfaces.append(self.__create_interface_access(index, untag_port_dict))
+            elif value == oid.cisco_catalyst.mode_port_state["tagged"]:
+                interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_port_dict))
+            elif value == oid.cisco_catalyst.mode_port_state["tagged-noneg"]:
+                interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_noneg_port_dict))
 
-            untagged = None
-            # Если Vlan Untagged 0 или 1 то пропускаем
-            if index in untag_port_dict \
-                    and untag_port_dict[index] not in ['0', '1']:
-                untagged = untag_port_dict[index]
+        return interfaces
 
-            interfaces.append(Interface(
-                index=index,
-                untagged=untagged,
-            ))
+    def find_interfaces_cisco_sg(self):
+        """
+        Finds and creates network interfaces for Cisco SG switches based on SNMP data.
+        
+        Returns:
+            List of interface objects created using SNMP data.
+        
+        """ 
 
+        interfaces = []
+        mode_port_dict = self.__get_snmp_dict(oid.cisco_sg.mode_port, 'INDEX-INT')
+        untag_port_dict = self.__get_snmp_dict(oid.cisco_sg.untag_port[self.family_model], 'INDEX-INT')
+        tag_port_dict = self.__get_tag_dict_by_vlan(oid.cisco_sg.hex_tag_port)
+
+        for index, value in mode_port_dict.items():
             if value == oid.cisco_sg.mode_port_state[self.family_model]["access"]:
-                interfaces[-1].mode = 'access'
+                interfaces.append(self.__create_interface_access(index, untag_port_dict))
             elif value == oid.cisco_sg.mode_port_state[self.family_model]["tagged"]:
-                interfaces[-1].mode = 'tagged'
-                interfaces[-1].tagged = tag_port_dict[index]
+                interfaces.append(self.__create_interface_tagged(index, untag_port_dict, tag_port_dict))
 
-                # Если Tagged и Untagged существуют
-                # и Vlan Untagged входит в список Tagged
-                # Удалим Vlan Untagged из списка Tagged
-                if interfaces[-1].tagged and interfaces[-1].untagged \
-                        and interfaces[-1].untagged in interfaces[-1].tagged:
+                # Check if the last interface has both tagged and untagged VLANs,
+                # and if the untagged VLAN is also in the tagged VLANs list
+                if (interfaces[-1].tagged
+                    and interfaces[-1].untagged
+                    and interfaces[-1].untagged in interfaces[-1].tagged):
+    
+                    # If yes, remove the untagged VLAN from the tagged VLANs list
                     interfaces[-1].tagged.remove(interfaces[-1].untagged)
-
-            if not interfaces[-1].tagged:
-                interfaces[-1].mode = 'tagged-all'
 
         return interfaces
 
