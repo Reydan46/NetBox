@@ -357,6 +357,7 @@ class NetworkDevice:
                         mac=SVI.MAC
                     )
 
+                # TODO Заменить этот костыль на определение Vlan по IP
                 # Ищем номер Vlan в названии и если он не равен 1
                 vid_interface_out = re.search(r'(\d+)', netbox_device_interface.name)
                 if vid_interface_out.groups() and vid_interface_out.group(1) != '1':
