@@ -118,6 +118,9 @@ class SNMPDevice:
 
     @staticmethod
     def __indexes_to_dict(indexes):
+        """
+        Converts a list of tuples to a dictionary where the first item of each tuple is the key and the second item is the value.
+        """
         return {interface: value for interface, value in indexes}
 
     def __model_lists_reader(self):
@@ -228,6 +231,29 @@ class SNMPDevice:
         return SVIs, self.error
 
     def find_interfaces(self):
+        def get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_data_dict):
+            """
+            Get LLDP data by index from dictionaries of interface names and LLDP data.
+            """
+            lldp_data_by_index = {}
+            for int_index, int_name in int_name_dict.items():
+                lldp_index = None
+                for idx, name in lldp_loc_port_dict.items():
+                    if name.startswith(int_name):
+                        lldp_index = idx
+                        break
+                if lldp_index:
+                    lldp_data = lldp_data_dict.get(lldp_index)
+                    if lldp_data:
+                        lldp_data_by_index[int_index] = lldp_data
+            return lldp_data_by_index
+
+        def get_snmp_data(oid, data_type, hex_output=False):
+            output, self.error = snmpwalk(oid, self.community_string, self.ip_address, data_type, hex=hex_output, logger=self.logger)
+            if self.error:
+                return {}, []
+            return self.__indexes_to_dict(output)
+
         self.error = ''
 
         if not self.model:
@@ -268,32 +294,17 @@ class SNMPDevice:
         if self.error:
             return [], []
 
-        int_name_output, self.error = \
-            snmpwalk(oid.general.si_int_name, self.community_string, self.ip_address, 'INDEX-DESC', logger=self.logger)
-        if self.error:
-            return [], []
-        int_name_dict = self.__indexes_to_dict(int_name_output)
-
-        mtu_output, self.error = \
-            snmpwalk(oid.general.si_mtu, self.community_string, self.ip_address, 'INDEX-INT', logger=self.logger)
-        if self.error:
-            return [], []
-        mtu_dict = self.__indexes_to_dict(mtu_output)
-
-        mac_output, self.error = \
-            snmpwalk(oid.general.si_mac, self.community_string, self.ip_address, 'INDEX-MAC', hex=True,
-                     logger=self.logger)
-        if self.error:
-            return [], []
-        mac_dict = self.__indexes_to_dict(mac_output)
-
-        desc_output, self.error = \
-            snmpwalk(oid.general.si_description, self.community_string, self.ip_address, 'INDEX-DESC-HEX', hex=True,
-                     logger=self.logger)
-        if self.error:
-            return [], []
-        desc_dict = self.__indexes_to_dict(desc_output)
-
+        int_name_dict = get_snmp_data(oid.general.si_int_name, 'INDEX-DESC')
+        mtu_dict = get_snmp_data(oid.general.si_mtu, 'INDEX-INT')
+        mac_dict = get_snmp_data(oid.general.si_mac, 'INDEX-MAC', hex_output=True)
+        desc_dict = get_snmp_data(oid.general.si_description, 'INDEX-DESC-HEX', hex_output=True)
+        
+        lldp_loc_port_dict = get_snmp_data(oid.general.lldp_loc_port, 'INDEX-DESC')
+        lldp_rem_name_dict = get_snmp_data(oid.general.lldp_rem_name, 'PREINDEX-DESC')      
+        lldp_rem_name_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_name_dict) 
+        lldp_rem_mac_dict = get_snmp_data(oid.general.lldp_rem_mac, 'PREINDEX-MAC', hex_output=True)
+        lldp_rem_mac_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_mac_dict)
+        
         vlans = []
         for interface in interfaces:
             interface.name = int_name_dict[interface.index]
@@ -312,6 +323,15 @@ class SNMPDevice:
                     if vid not in vlans:
                         vlans += [vid]
 
+            attribute_dict = {
+                "lldp_rem_mac": lldp_rem_mac_by_index,
+                "lldp_rem_name": lldp_rem_name_by_index
+            }
+            for attribute, data in attribute_dict.items():
+                if interface.index in data:
+                    setattr(interface, attribute, data[interface.index])
+                    print(f'{interface.name}: {getattr(interface, attribute)}')
+
         return interfaces, sorted(vlans, key=int)
 
     def __get_snmp_dict(self, oid, snmp_type):
@@ -325,7 +345,7 @@ class SNMPDevice:
 
     def __get_tag_dict_by_port(self, oid):
         """
-        This is a helper function that uses SNMP to get a dictionary of the specified OID and convert it to a tag dictionary.
+        Метод для получения порт:влан словаря, для случаев, когда список вланов храниться в HEX
         """
         output, self.error = snmpwalk(oid, self.community_string, self.ip_address, 'INDEX-HEX', logger=self.logger)
         if self.error:
@@ -340,7 +360,7 @@ class SNMPDevice:
 
     def __get_tag_dict_by_vlan(self, oid):
         """
-        Helper function to get a dictionary of specified OID and convert it to a tag port dictionary.
+        Метод для получения порт:влан словаря, для случаев, когда список портов храниться в HEX
         """
         output, self.error = snmpwalk(oid, self.community_string, self.ip_address, 'INDEX-HEX',
                                       logger=self.logger)
@@ -407,13 +427,11 @@ class SNMPDevice:
     def find_interfaces_cisco_sg(self):
         """
         Finds and creates network interfaces for Cisco SG switches based on SNMP data.
-        
         Returns:
             List of interface objects created using SNMP data.
-        
         """ 
-
         interfaces = []
+        
         mode_port_dict = self.__get_snmp_dict(oid.cisco_sg.mode_port, 'INDEX-INT')
         untag_port_dict = self.__get_snmp_dict(oid.cisco_sg.untag_port[self.family_model], 'INDEX-INT')
         tag_port_dict = self.__get_tag_dict_by_vlan(oid.cisco_sg.hex_tag_port)
@@ -423,13 +441,11 @@ class SNMPDevice:
                 interfaces.append(self.__create_interface_access(index, untag_port_dict))
             elif value == oid.cisco_sg.mode_port_state[self.family_model]["tagged"]:
                 interfaces.append(self.__create_interface_tagged(index, untag_port_dict, tag_port_dict))
-
                 # Check if the last interface has both tagged and untagged VLANs,
                 # and if the untagged VLAN is also in the tagged VLANs list
                 if (interfaces[-1].tagged
                     and interfaces[-1].untagged
                     and interfaces[-1].untagged in interfaces[-1].tagged):
-    
                     # If yes, remove the untagged VLAN from the tagged VLANs list
                     interfaces[-1].tagged.remove(interfaces[-1].untagged)
 
@@ -503,8 +519,16 @@ def snmpwalk(oid, community_string, ip_address, typeSNMP='', hex=False, custom_o
                 r'.(\d+) = [\w\-]+: (([0-9A-Fa-f]{2} ?){6})',
                 lambda re_out: [re_out.group(1), re_out.group(2).strip().replace(" ", ':').upper()]
             ),
+            'PREINDEX-MAC': RegexAction(
+                r'.(\d+).\d+ = [\w\-]+: (([0-9A-Fa-f]{2} ?){6})',
+                lambda re_out: [re_out.group(1), re_out.group(2).strip().upper()]
+            ),
             'INDEX-DESC': RegexAction(
                 r'.(\d+) = [\w\-]*:? ?"([^"]*)"',
+                lambda re_out: [re_out.group(1), re_out.group(2)]
+            ),
+            'PREINDEX-DESC': RegexAction(
+                r'.(\d+).\d+ = [\w\-]*:? ?"([^"]*)"',
                 lambda re_out: [re_out.group(1), re_out.group(2)]
             ),
             'INDEX-HEX': RegexAction(

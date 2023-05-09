@@ -7,3 +7,4 @@
 *.pyc
 device_lists/*.list
 scanner.log
+TODO.list

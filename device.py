@@ -8,19 +8,23 @@ import logging
 
 
 class NetworkDevice:
+    # Shared attributes for implementing the Monostate (Borg) pattern
+    __netbox_shared_state = {
+        "__netbox_connection": None,
+    }
+    # Fetch environment variables and store them in a dictionary
+    __env_variables = {
+        "__netbox_url": os.environ.get("NETBOX_URL"),
+        "__netbox_token": os.environ.get("NETBOX_TOKEN"),
+    }
+
     def __init__(self, ip_address, community_string=None, site_slug=None, role=None, logger=None):
-        """
-        Initializes a new NetworkDevice object with provided IP address and optional parameters.
-        Sets up the logger, SNMPDevice configuration, and NetBox connection.
-        
-        Args:
-        ip_address (str): The IP address of the network device.
-        community_string (str, optional): The SNMP community string for the device. Defaults to "public".
-        site_slug (str, optional): The NetBox site slug for the device. Defaults to None.
-        role (str, optional): The device role. Defaults to None.
-        logger (logging.Logger, optional): A logger for debugging. Defaults to None, which creates a default logger.
-        """
-        
+        # Check if the environment variables exist in the dictionary
+        for key, value in self.__env_variables.items():
+            if not value:
+                raise ValueError(f"{key} is not set.")
+        # Update the instance's state with the shared state
+        self.__dict__.update(self.__netbox_shared_state)
         # Проверяем наличие логгера
         if logger:
             self.logger = logger
@@ -31,9 +35,9 @@ class NetworkDevice:
         self.__snmp: SNMPDevice = None
 
         # Initialize NetBox connection and related attributes
-        self.__netbox_connection: pynetbox.core.api.Api = None
-        self.__netbox_url = None
-        self.__netbox_token = None
+        #self.__netbox_connection: pynetbox.core.api.Api = None
+        #self.__netbox_url = None
+        #self.__netbox_token = None
         self.__netbox_device: pynetbox.models.dcim.Devices = None
         self.__netbox_device_sv_interfaces = []
         self.__netbox_device_sp_interfaces = []
@@ -96,7 +100,6 @@ class NetworkDevice:
     def __create_SNMPDevice(self):
         """
         Create an SNMPDevice if one does not already exist or if the community string has changed.
-
         :return: The created or existing SNMPDevice.
         """
         if not self.__snmp or self.__snmp.community_string != self.community_string:
@@ -116,18 +119,18 @@ class NetworkDevice:
         self.error = ''
         try:
             if not self.__netbox_connection:
-                self.__netbox_url = os.environ.get('NETBOX_URL')
-                if not self.__netbox_url:
-                    self.error = 'NetBox URL is empty!'
-                    self.logger.error(self.error)
-                    return None
-                self.__netbox_token = os.environ.get('NETBOX_TOKEN')
-                if not self.__netbox_token:
-                    self.error = 'NetBox TOKEN is empty!'
-                    self.logger.error(self.error)
-                    return None
+                #self.__netbox_url = os.environ.get('NETBOX_URL')
+                #if not self.__netbox_url:
+                #    self.error = 'NetBox URL is empty!'
+                #    self.logger.error(self.error)
+                #    return None
+                #self.__netbox_token = os.environ.get('NETBOX_TOKEN')
+                #if not self.__netbox_token:
+                #    self.error = 'NetBox TOKEN is empty!'
+                #    self.logger.error(self.error)
+                #    return None
                 self.logger.debug('Connect to NetBox')
-                self.__netbox_connection = pynetbox.api(url=self.__netbox_url, token=self.__netbox_token)
+                self.__netbox_connection = pynetbox.api(url=self.__env_variables["__netbox_url"], token=self.__env_variables["__netbox_token"])
         except:
             self.error = 'Fail connect to NetBox'
         return self.__netbox_connection
@@ -241,11 +244,10 @@ class NetworkDevice:
             self.site_slug = site_slug
         if role:
             self.role = role
-
         if not self.role:
             self.get_role_from_hostname()
 
-        # Если все необходимые параметры заданы
+        # Создание полноценного устройства
         if self.hostname and self.model and self.serial_number and self.site_slug and self.role:
             # Создаём подключение к NetBox
             self.__connect_to_netbox()
