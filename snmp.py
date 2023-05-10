@@ -330,7 +330,7 @@ class SNMPDevice:
             for attribute, data in attribute_dict.items():
                 if interface.index in data:
                     setattr(interface, attribute, data[interface.index])
-                    print(f'{interface.name}: {getattr(interface, attribute)}')
+                    self.logger.debug(f'{interface.name}: {getattr(interface, attribute)}')
 
         return interfaces, sorted(vlans, key=int)
 

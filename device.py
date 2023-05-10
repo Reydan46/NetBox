@@ -469,7 +469,7 @@ class NetworkDevice:
             if netbox_interface:
                 netbox_interface.name = interface_object.name
                 netbox_interface.mtu = interface_object.mtu
-                netbox_interface.mac = interface_object.mac
+                netbox_interface.mac_address = interface_object.mac
                 netbox_interface.description = interface_object.desc
                 netbox_interface.mode = interface_object.mode
 
@@ -487,7 +487,7 @@ class NetworkDevice:
                         device=self.__netbox_device.id,
                         name=interface_object.name,
                         mtu=interface_object.mtu,
-                        mac=interface_object.mac,
+                        mac_address=interface_object.mac,
                         description=interface_object.desc,
                         mode=interface_object.mode,
                         type=interface_object.type,
