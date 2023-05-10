@@ -83,12 +83,11 @@ for csv_device in devices_reader:
         role=csv_device['role'],
         logger=logger
     )
-    
-    if not network_device.error:
-        network_device.ConfigureInNetBox()
-        
+
     if network_device.error:
         devices_with_error += [network_device]
+    else:
+        network_device.ConfigureInNetBox()
     
     logger.info('End processing device\n' + '#' * 120)
 
