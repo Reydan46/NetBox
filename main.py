@@ -44,9 +44,6 @@ start_time = datetime.now()
 devices_with_error = []
 devices_file = open('devices.csv', newline='')
 devices_reader = csv.DictReader(devices_file, delimiter=';')
-netbox_vlans = None
-netbox_connection = None
-models = {}
 
 # Читаем столбец действия (act)
 # "+" - работать только с этим хостом
