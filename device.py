@@ -8,23 +8,27 @@ import logging
 
 
 class NetworkDevice:
-    # Shared attributes for implementing the Monostate (Borg) pattern
-    __netbox_shared_state = {
-        "__netbox_connection": None,
-    }
+    # NetBox Connection
+    __netbox_connection: pynetbox.core.api.Api = None
     # Fetch environment variables and store them in a dictionary
     __env_variables = {
         "__netbox_url": os.environ.get("NETBOX_URL"),
         "__netbox_token": os.environ.get("NETBOX_TOKEN"),
     }
+    # Check if the environment variables exist in the dictionary
+    for key, value in __env_variables.items():
+        if not value:
+            raise ValueError(f"{key} is not set.")
+    try:
+        if not __netbox_connection:
+            __netbox_connection = pynetbox.api(url=__env_variables["__netbox_url"], token=__env_variables["__netbox_token"])
+    except Exception as e:
+        raise e
+
+    # NetBox Vlan's
+    __netbox_vlans = {}
 
     def __init__(self, ip_address, community_string=None, site_slug=None, role=None, logger=None):
-        # Check if the environment variables exist in the dictionary
-        for key, value in self.__env_variables.items():
-            if not value:
-                raise ValueError(f"{key} is not set.")
-        # Update the instance's state with the shared state
-        self.__dict__.update(self.__netbox_shared_state)
         # Проверяем наличие логгера
         if logger:
             self.logger = logger
@@ -34,15 +38,13 @@ class NetworkDevice:
         # Initialize SNMPDevice and related attributes
         self.__snmp: SNMPDevice = None
 
-        # Initialize NetBox connection and related attributes
-        #self.__netbox_connection: pynetbox.core.api.Api = None
+        # Initialize NetBox related attributes
         #self.__netbox_url = None
         #self.__netbox_token = None
         self.__netbox_device: pynetbox.models.dcim.Devices = None
         self.__netbox_device_sv_interfaces = []
         self.__netbox_device_sp_interfaces = []
         self.__netbox_device_ip_address = None
-        self.__netbox_vlans = {}
 
         # Initialize password-related attributes
         self.__password_salt = None
@@ -79,24 +81,6 @@ class NetworkDevice:
         else:
             return "Undefined"
 
-    def getModels(self):
-        return self.__snmp.getModels()
-
-    def setModels(self, models):
-        self.__snmp.setModels(models)
-
-    def getNetboxConnection(self):
-        return self.__netbox_connection
-
-    def setNetboxConnection(self, netbox_connection: pynetbox.core.api.Api):
-        self.__netbox_connection = netbox_connection
-
-    def getNetboxVlans(self):
-        return self.__netbox_vlans
-
-    def setNetboxVlans(self, netbox_vlans: dict):
-        self.__netbox_vlans = netbox_vlans
-
     def __create_SNMPDevice(self):
         """
         Create an SNMPDevice if one does not already exist or if the community string has changed.
@@ -119,18 +103,8 @@ class NetworkDevice:
         self.error = ''
         try:
             if not self.__netbox_connection:
-                #self.__netbox_url = os.environ.get('NETBOX_URL')
-                #if not self.__netbox_url:
-                #    self.error = 'NetBox URL is empty!'
-                #    self.logger.error(self.error)
-                #    return None
-                #self.__netbox_token = os.environ.get('NETBOX_TOKEN')
-                #if not self.__netbox_token:
-                #    self.error = 'NetBox TOKEN is empty!'
-                #    self.logger.error(self.error)
-                #    return None
                 self.logger.debug('Connect to NetBox')
-                self.__netbox_connection = pynetbox.api(url=self.__env_variables["__netbox_url"], token=self.__env_variables["__netbox_token"])
+                self.__class__.__netbox_connection = pynetbox.api(url=self.__env_variables["__netbox_url"], token=self.__class__.__env_variables["__netbox_token"])
         except:
             self.error = 'Fail connect to NetBox'
         return self.__netbox_connection
@@ -143,12 +117,7 @@ class NetworkDevice:
             return
 
         self.logger.debug('Get VLANs from NetBox')
-        if not self.__netbox_connection:
-            self.error = 'No connecting to NetBox'
-            self.logger.debug(self.error)
-            return
 
-        self.__netbox_vlans = {}
         site_out = self.__netbox_connection.dcim.sites.all()
         if not site_out:
             self.error = 'No get sites in NetBox!'
@@ -162,7 +131,7 @@ class NetworkDevice:
             return
 
         for site in site_out:
-            self.__netbox_vlans.update({site.slug: {}})
+            self.__class__.__netbox_vlans.update({site.slug: {}})
 
         # Если сайт отсуствует - ошибка
         if self.site_slug not in self.__netbox_vlans:
@@ -174,7 +143,7 @@ class NetworkDevice:
                 self.error = f'Vlan ID {vlan.vid} has no in Site ({self.site_slug})!'
                 self.logger.error(self.error)
                 return
-            self.__netbox_vlans[vlan.site.slug].update({str(vlan.vid): vlan})
+            self.__class__.__netbox_vlans[vlan.site.slug].update({str(vlan.vid): vlan})
 
     # Проверка существования Vlan и, при его наличии, возврат его объекта
     def get_vlan_object(self, vid):

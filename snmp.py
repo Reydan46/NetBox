@@ -61,6 +61,13 @@ class SNMPDevice:
     """
     SNMPDevice class defines a device for SNMP communication.
     """
+
+    # Dictionary for storing device's models
+    models = {}
+    with open('model.lists', 'r') as f:
+        for line in f:
+            model_type, models_line = line.split(':')
+            models.update({model_type: list(filter(None, models_line.split(',')))})
     
     def __init__(self, community_string, ip_address, model=None, logger=None):
         """
@@ -82,9 +89,6 @@ class SNMPDevice:
         else:
             self.logger = logging.getLogger('SNMPDevice')
 
-        # Dictionary for storing device's models
-        self.models = {}
-
         self.family_model = ""
 
         self.error = ''
@@ -93,12 +97,6 @@ class SNMPDevice:
             self.model = model
         self.community_string = community_string
         self.ip_address = ip_address
-
-    def getModels(self):
-        return self.models
-
-    def setModels(self, models):
-        self.models = models
 
     @staticmethod
     def __hex_to_binary(hex_str):
@@ -122,19 +120,6 @@ class SNMPDevice:
         Converts a list of tuples to a dictionary where the first item of each tuple is the key and the second item is the value.
         """
         return {interface: value for interface, value in indexes}
-
-    def __model_lists_reader(self):
-        if not self.models:
-            self.logger.info('Read models from file')
-
-            self.family_model = ""
-
-            with open('model.lists', 'r') as f:
-                file = f.read()
-
-            for line in file.split('\n'):
-                model_type, models_line = line.split(':')
-                self.models.update({model_type: list(filter(None, models_line.split(',')))})
 
     def getValue(self, action):
         self.error = ''
@@ -265,8 +250,6 @@ class SNMPDevice:
 
         if self.error:
             return [], []
-
-        self.__model_lists_reader()
 
         self.logger.info(f'Find model "{self.model}" in model.lists')
         interfaces = []

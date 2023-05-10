@@ -85,13 +85,7 @@ for csv_device in devices_reader:
     )
     
     if not network_device.error:
-        network_device.setModels(models)
-        network_device.setNetboxConnection(netbox_connection)
-        network_device.setNetboxVlans(netbox_vlans)
         network_device.ConfigureInNetBox()
-        models = network_device.getModels()
-        netbox_connection = network_device.getNetboxConnection()
-        netbox_vlans = network_device.getNetboxVlans()
         
     if network_device.error:
         devices_with_error += [network_device]
