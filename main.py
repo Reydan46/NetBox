@@ -1,103 +1,122 @@
 import csv
-import logging
-import sys
-from datetime import datetime
+import ipaddress
 
-from prettytable import ALL, PrettyTable
+from prettytable import PrettyTable
+from errors import Error
 
-from device import NetworkDevice
+from snmp import SNMPDevice
 
-# Initialize logger with the name 'NetBox'
-logger = logging.getLogger('NetBox')
+# ========================================================================
+#                                  Классы
+# ========================================================================
 
-# Set logging level (uncomment the desired level)
-logger.setLevel(logging.DEBUG)
-# logger.setLevel(logging.INFO)
-# logger.setLevel(logging.WARNING)
-# logger.setLevel(logging.ERROR)
+class NetworkDevice:
 
-# Configure console (stream) handler to print log messages
-c_handler = logging.StreamHandler(sys.stdout)
-c_format = logging.Formatter(
-    "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
-c_handler.setFormatter(c_format)
-logger.addHandler(c_handler)
+    def __init__(self, ip_address, role, community_string):
+        self.ip_address: str = ip_address
+        self.community_string: str = community_string
+        self.role: str = role
 
-# Configure file handler to store log messages in 'NetBox.log' with mode 'w' (overwrite)
-f_handler = logging.FileHandler('NetBox.log', mode='w')
-f_format = logging.Formatter(
-    "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
-f_handler.setFormatter(f_format)
-logger.addHandler(f_handler)
+    # Временный для дебага - потом удалить
+    def print_attributes(self):
+        for attribute, value in self.__dict__.items():
+            print(f"{attribute}: {value}")
+        print('-' * 40)
 
-# Uncomment the following lines to test different logging levels
-# logger.debug('logger.debug')
-# logger.info('logger.info')
-# logger.warning('logger.warning')
-# logger.error('logger.error')
-# logger.exception('logger.exception')
+    # Find and set the site_slug attribute based on the IP address
+    def find_site_slug(self):
+        # Read the CSV file with site and IP prefix information, and store in a sites_dict variable
+        sites_dict = {}
+        with open('prefixes.csv') as f:
+            reader = csv.DictReader(f, delimiter=';')
+            for row in reader:
+                site_slug = row['site']
+                ip_range = row['prefix']
+                sites_dict[site_slug] = ipaddress.ip_network(
+                    ip_range, strict=False)
 
-# Сохраняем текущее время для расчета времени выполнения скрипта
-start_time = datetime.now()
+        # Check if the NetworkDevice IP address is in one of the IP ranges,
+        # and store the matching site_slug in the NetworkDevice instance
+        site_found = False
+        for site_slug, ip_range in sites_dict.items():
+            if ipaddress.ip_address(self.ip_address) in ip_range:
+                self.site_slug = site_slug
+                site_found = True
+                break
 
+        # Raise an error if the site is not found for the given IP address
+        if not site_found:
+            raise Error(f"Site not found for IP address {self.ip_address}")
+
+# ========================================================================
+#                                 Функции
+# ========================================================================
+def csv_reader():
+    devices_with_error = []
+    devices_file = open('devices.csv', newline='')
+    devices_reader = csv.DictReader(devices_file, delimiter=';')
+
+    # Читаем столбец действия (act)
+    # "+" - работать только с этим хостом
+    # "-" - исключить хост из обработки
+    # Note: "плюсы" имеют приоритет перед "минусами"
+    act = 'all'
+    for csv_device in devices_reader:
+        if csv_device['act'] == '+':
+            act = 'include'
+            break
+        elif csv_device['act'] == '-':
+            act = 'exclude'
+    # Возврат в начало файла
+    devices_file.seek(0)
+    devices_reader.__init__(devices_file, delimiter=";")
+    return devices_reader, act
+
+# ========================================================================
+#                               Тело скрипта
+# ========================================================================
 # Читаем csv файл со списком устройств
-devices_with_error = []
-devices_file = open('devices.csv', newline='')
-devices_reader = csv.DictReader(devices_file, delimiter=';')
+devices_reader, act = csv_reader()
 
-# Читаем столбец действия (act)
-# "+" - работать только с этим хостом
-# "-" - исключить хост из обработки
-# Note: "плюсы" имеют приоритет перед "минусами"
-act = 'all'
+# ГЛАВНЫЙ ЦИКЛ
+# ========================================================================
+error_messages = {}
 for csv_device in devices_reader:
-    if csv_device['act'] == '+':
-        act = 'include'
-        break
-    elif csv_device['act'] == '-':
-        act = 'exclude'
+    try:
+        # Условия для пропуска устройства
+        if (act == 'exclude' and csv_device['act'] == '-') or \
+                (act == 'include' and csv_device['act'] != '+'):
+            continue
 
-# Возврат в начало файла
-devices_file.seek(0)
-devices_reader.__init__(devices_file, delimiter=";")
+        # Создаем экземпляр класса NetworkDevice, который служит "буфером" для информации между модулями
+        switch_network_device = NetworkDevice(
+            ip_address=csv_device['ip device'].strip(),
+            role=csv_device['role'],
+            community_string=csv_device['community'] if csv_device['community'] else 'public',
+        )
+        # Получаем имя сайта по айпи опрашиваемого устройства
+        switch_network_device.find_site_slug()
 
-# Проходим по списку девайсов из csv
-for csv_device in devices_reader:
-    # Условия для пропуска устройства
-    if (act == 'exclude' and csv_device['act'] == '-') or \
-            (act == 'include' and csv_device['act'] != '+'):
-        logger.info(
-            f"Passed device IP: {csv_device['ip device']}\n" + '#' * 120)
+        # БЛОК РАБОТЫ С МОДУЛЕМ SNMP
+        # создаем экземпляр класса SNMPDevice для взаимодействия с модулем SNMP
+        snmp_device = SNMPDevice(
+            switch_network_device.ip_address,
+            switch_network_device.community_string
+        )
+        switch_network_device.hostname = snmp_device.get_hostname()  # получаем hostname
+        
+        switch_network_device.print_attributes()
+    except Error as e:
+        error_messages[csv_device['ip device'].strip()] = str(e)
         continue
-    
-    logger.info(f"Processing device IP: {csv_device['ip device']}")
-    
-    # Создаем объект класса device.NetworkDevice с параметрами полученными из csv
-    network_device = NetworkDevice(
-        ip_address=csv_device['ip device'].strip(),
-        community_string=csv_device['community'],
-        site_slug=csv_device['site slug'],
-        role=csv_device['role'],
-        logger=logger
-    )
 
-    if network_device.error:
-        devices_with_error += [network_device]
-    else:
-        network_device.ConfigureInNetBox()
-    
-    logger.info('End processing device\n' + '#' * 120)
-
-# Если были ошибки с устройствами - выводим
-if devices_with_error:
-    table = PrettyTable(["IP", "Model", "Error"])
+# ВЫВОД ОШИБОК
+# ========================================================================
+if error_messages:
+    table = PrettyTable(["IP", "Error"])
     table.align["Error"] = "l"
     table.max_width = 75
     table.valign["Error"] = "t"
-    for error_device in devices_with_error:
-        table.add_row([error_device.ip_address,
-                      error_device.getModel(), error_device.error])
-    logger.info(f"The following devices had errors:\n{table}")
-else:
-    logger.info("All devices were successfully created in NetBox")
-logger.info(f"Duration executing:  {datetime.now() - start_time}")
+    for i in error_messages.items():
+        table.add_row([i[0], i[1]])
+    print(table)

@@ -8,3 +8,4 @@
 device_lists/*.list
 scanner.log
 TODO.list
+prefixes.csv
