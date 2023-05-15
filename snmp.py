@@ -187,6 +187,20 @@ class SNMPDevice:
         value = self.snmpwalk(oid.general.hostname, 'DotSplit')
         return value[0]
 
+    def get_model(self):
+        value = self.snmpwalk(oid.general.model, self.community_string, self.ip_address, logger=self.logger)
+
+        re_out = re.search(r'(\b[A-Z][A-Z0-9]{2,}-[A-Z0-9]{2,8}\b)', value[0])
+        self.model = re_out.group(1) if re_out else ''
+
+        if not self.model:
+            value = self.snmpwalk(oid.general.alt_model, self.community_string, self.ip_address, logger=self.logger)
+            if self.error:
+                return None, self.error
+            self.model = next((i for i in value if i), '')
+
+        return self.model
+
 # # Виртуальный IP интерфейс
 # class SVI:
 #     def __init__(self, ip_address, mask, index, description, MTU, MAC):
@@ -233,24 +247,6 @@ class SNMPDevice:
 #     def __repr__(self):
 #         tagged = f" Tagged: " + ','.join(self.tagged) if self.tagged else ""
 #         return f'{self.name} {self.index} ({self.mode}){f" Untagged: {self.untagged}" if self.untagged else ""}{tagged}'
-
-#     def getModel(self):
-#         value = self.getValue(snmpwalk(oid.general.model, self.community_string, self.ip_address, logger=self.logger))
-
-#         if self.error:
-#             return None, self.error
-
-#         re_out = re.search(r'(\b[A-Z][A-Z0-9]{2,}-[A-Z0-9]{2,8}\b)', value[0])
-#         self.model = re_out.group(1) if re_out else ''
-
-#         if not self.model:
-#             value = self.getValue(
-#                 snmpwalk(oid.general.alt_model, self.community_string, self.ip_address, logger=self.logger))
-#             if self.error:
-#                 return None, self.error
-#             self.model = next((i for i in value if i), '')
-
-#         return self.model, self.error
 
 #     def getSerialNumber(self):
 #         value = self.getValue(
