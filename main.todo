@@ -1,0 +1,134 @@
+from snmp import SNMPDevice
+
+
+SNMP
+
+class Interface:
+    # index
+    # ip_address
+    # mask
+    # ip_with_prefix
+    # mtu
+    # mac
+    # untagged
+    # tagged
+    # name
+    # desc
+    # mode
+    # type
+    # lldp_rem : {'name': ... , 'mac': ... }
+    # (shared) arp_table
+        
+    def get_ip_from_arp(mac):
+        ...
+        self.ip_address = 
+    
+Main    
+
+class NetworkDevice:
+    # ip_address : str
+    # community_string : str
+    # hostname : str
+    # model : str
+    # serial_number : str
+    # role : str
+    # site_slug : str
+    # virtual_interfaces : list[Interface]
+    # family_model : str
+    # physical_interfaces : list[Interface]
+    # vlans : list
+    # netbox_site : 
+    # netbox_vlans : 
+    # netbox_device
+
+    def get_site_by_ip(self):
+        ...
+        self.site_slug = 
+    
+    def get_vlans(self):
+        ...
+        self.vlans = 
+        
+
+network_devices = []
+
+for device in devices.csv :
+    # ip_address : str
+    # community_string : str
+    # role : str
+    
+    # создаем экземпляр класса NetworkDevice, который служит "буфером" для информации между модулями
+    switch_network_device = NetworkDevice(
+        ip_address,
+        community_string,
+        role
+    )
+    # метод для получения имени сайта по айпи опрашиваемого устройства
+    error = switch_network_device.get_site_by_ip()
+    
+    # БЛОК РАБОТЫ С МОДУЛЕМ SNMP
+    # создаем экземпляр класса SNMPDevice для взаимодействия с модулем SNMP
+    snmp_device = SNMPDevice(
+        switch_network_device.ip_address,
+        switch_network_device.community_string
+    )
+    switch_network_device.hostname, error = snmp_device.get_hostname()  # получаем hostname
+    # если device.csv не содержит значения role для устройства, то определяем role по hostname
+    if not switch_network_device.role:
+        switch_network_device.get_role_from_hostname()
+    switch_network_device.model, error = snmp_device.get_model() # получаем модель
+    switch_network_device.serial_number, error = snmp_device.get_serial_number() # получаем серийный номер
+    switch_network_device.virtual_interfaces, error = snmp_device.get_virtual_interfaces() # получаем список виртуальных интерфейсов
+    switch_network_device.family_model, error = snmp_device.get_family_model() # получаем семейство моделей
+    switch_network_device.physical_interfaces, error = snmp_device.get_physical_interfaces() # получаем список физических интерфейсов
+    switch_network_device.get_vlans() # получаем список вланов
+
+    # БЛОК РАБОТЫ С МОДУЛЕМ NETBOX
+    # создаем экземпляр класса NetBoxDevice для взаимодействия с модулем NetBox
+    switch_netbox_device = NetBoxDevice(switch_network_device.ip_address, switch_network_device.role, switch_network_device.hostname, switch_network_device.serial_number, switch_network_device.site_slug)
+    error = switch_netbox_device.create_connection() # создаем подключение к netbox
+    error = switch_netbox_device.get_sites_and_vlans() # метод получает все созданные в нетбокс сайты и вланы
+    switch_network_device.netbox_site, error = switch_netbox_device.check_created_site() # метод проверяет создан ли сайт в нетбокс
+    switch_network_device.netbox_vlans, error = switch_netbox_device.check_created_vlans( switch_network_device.vlans ) # проверяет все ли вланы созданы в нетбокс
+    ### hostname, model, serial_number, site_slug, role ###
+    switch_network_device.netbox_device, error = switch_netbox_device.create_netbox_device( switch_network_device ) # наконец добавляем свич в нетбокс
+    
+    # пробегаем по списку виртуальных интерфейсов и создаем их в нашем свиче в нетбокс
+    for interface in switch_network_device.virtual_interfaces:
+        netbox_interface, error = switch_netbox_device.create_interface( interface )
+        switch_network_device.netbox_virtual_interfaces.append( netbox_interface )
+    # аналогично для физических интерфейсов
+    for interface in switch_network_device.physical_interfaces:
+        netbox_interface, error = switch_netbox_device.create_interface( interface )
+        switch_network_device.netbox_physical_interfaces.append( netbox_interface )
+    
+    # БЛОК РАБОТЫ С КОНЕЧНЫМИ УСТРОЙСТВАМИ
+    # проходим по списку физических интерфейсов свича
+    for interface in switch_network_device.physical_interfaces:
+        # для каждого порта создаем экземпляр класса NetworkDevice...
+        host_network_device = NetworkDevice(
+            hostname = interface.lldp_rem['name'],
+            model = 'unknown',
+            site_slug = switch_network_device.site_slug,
+            role = 'Host'
+            )
+        
+        # ...Interface... 
+        host_interface = Interface(
+            name = 'interface',
+            type = 'Other',
+            mac = interface.lldp_rem['mac'],
+            )
+        host_interface.get_ip_from_arp() # метод получения IP из ARP-таблицы
+        
+        # ...и NetBoxDevice
+        host_netbox_device = NetBoxDevice(host_network_device.role, host_network_device.hostname, host_network_device.site_slug)
+        host_network_device.netbox_device, error = host_netbox_device.create_netbox_device( host_network_device )
+        
+        host_network_device.netbox_interface, error = host_netbox_device.create_interface( host_interface )
+    
+    
+    
+    
+    network_devices.append(switch_network_device)
+    
