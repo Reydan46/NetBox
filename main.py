@@ -1,9 +1,10 @@
 import csv
 import ipaddress
+import re
 
 from prettytable import PrettyTable
-from errors import Error
 
+from errors import Error
 from snmp import SNMPDevice
 
 # ========================================================================
@@ -47,6 +48,17 @@ class NetworkDevice:
         # Raise an error if the site is not found for the given IP address
         if not site_found:
             raise Error(f"Site not found for IP address {self.ip_address}")
+
+    def get_role_from_hostname(self):
+        role_out = re.search(r'-([p]?sw)\d+', self.hostname)
+        role_mapping = {
+            'psw': 'poe-switch',
+            'sw': 'Access switch'
+        }
+        if role_out:
+            self.role = role_mapping.get(role_out.group(1))
+        else:
+            raise Error("Could not determine role from hostname")
 
 # ========================================================================
 #                                 Функции
@@ -104,6 +116,9 @@ for csv_device in devices_reader:
             switch_network_device.community_string
         )
         switch_network_device.hostname = snmp_device.get_hostname()  # получаем hostname
+        # если device.csv не содержит значения role для устройства, то определяем role по hostname
+        if not switch_network_device.role:
+            switch_network_device.get_role_from_hostname()
         
         switch_network_device.print_attributes()
     except Error as e:

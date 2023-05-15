@@ -6,9 +6,9 @@
 # from collections import defaultdict
 import re
 import subprocess
-from errors import Error
 
 import oid.general
+from errors import Error
 
 # import oid.cisco_sg
 # import oid.cisco_catalyst
@@ -166,7 +166,6 @@ class SNMPDevice:
 
         except Exception as e:
             raise Error(f'Unexpected error: {str(e)}')
-            # return out, traceback.print_exc()
 
     # def getValue(self, action):
     #     self.error = ''
