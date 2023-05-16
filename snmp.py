@@ -191,8 +191,18 @@ class SNMPDevice:
             if self.model:
                 return self.model
 
-        # Ни по одному oid модель не найдена
+        # Ни по одному oid модель не получена
         raise Error("Model is undefined")
+
+    def get_serial_number(self):
+        
+        value = self.snmpwalk(oid.general.serial_number)
+        if value:
+            self.serial_number = next((i for i in value if i), None)
+            if self.serial_number:
+                return self.serial_number
+
+        raise Error("Serial number is undefined")
 
 # # Виртуальный IP интерфейс
 # class SVI:
@@ -240,16 +250,6 @@ class SNMPDevice:
 #     def __repr__(self):
 #         tagged = f" Tagged: " + ','.join(self.tagged) if self.tagged else ""
 #         return f'{self.name} {self.index} ({self.mode}){f" Untagged: {self.untagged}" if self.untagged else ""}{tagged}'
-
-#     def getSerialNumber(self):
-#         value = self.getValue(
-#             snmpwalk(oid.general.serial_number, self.community_string, self.ip_address, logger=self.logger))
-
-#         if self.error:
-#             return None, self.error
-#         serial_number = next((i for i in value if i), '')
-
-#         return serial_number, self.error
 
 #     def getSVIs(self):
 #         indexes = self.getValue(
