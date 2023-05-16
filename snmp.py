@@ -167,39 +167,32 @@ class SNMPDevice:
         except Exception as e:
             raise Error(f'Unexpected error: {str(e)}')
 
-    # def getValue(self, action):
-    #     self.error = ''
-    #     if self.community_string and self.ip_address:
-    #         value_out, self.error = action
-    #         if self.error:
-    #             return ''
-    #         value = value_out
-    #     else:
-    #         if not self.community_string:
-    #             self.error = 'Community string is Empty!'
-    #         elif not self.community_string:
-    #             self.error = 'IP address is Empty!'
-    #         self.logger.error(self.error)
-    #         return ''
-    #     return value
-
     def get_hostname(self):
         value = self.snmpwalk(oid.general.hostname, 'DotSplit')
-        return value[0]
+        if not value:
+            raise Error("Hostname is undefined")
+
+        self.hostname = value[0]
+        return self.hostname
 
     def get_model(self):
-        value = self.snmpwalk(oid.general.model, self.community_string, self.ip_address, logger=self.logger)
+        # Пробуем получить модель по основному oid
+        value = self.snmpwalk(oid.general.model)
+        if value:
+            re_out = re.search(r'(\b[A-Z][A-Z0-9]{2,}-[A-Z0-9]{2,8}\b)', value[0])
+            if re_out:
+                self.model = re_out.group(1)
+                return self.model
 
-        re_out = re.search(r'(\b[A-Z][A-Z0-9]{2,}-[A-Z0-9]{2,8}\b)', value[0])
-        self.model = re_out.group(1) if re_out else ''
+        # Пробуем получить модель по альтернативному oid
+        value = self.snmpwalk(oid.general.alt_model)
+        if value:
+            self.model = next((i for i in value if i), None)
+            if self.model:
+                return self.model
 
-        if not self.model:
-            value = self.snmpwalk(oid.general.alt_model, self.community_string, self.ip_address, logger=self.logger)
-            if self.error:
-                return None, self.error
-            self.model = next((i for i in value if i), '')
-
-        return self.model
+        # Ни по одному oid модель не найдена
+        raise Error("Model is undefined")
 
 # # Виртуальный IP интерфейс
 # class SVI:
