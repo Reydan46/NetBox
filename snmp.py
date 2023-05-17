@@ -70,7 +70,9 @@ class SNMPDevice:
 #         return {interface: value for interface, value in indexes}
 
     def snmpwalk(self, oid, typeSNMP='', hex=False, custom_option=None, timeout_process=None):
-        out = []  
+        out = []
+        permissible_oids = ['oid.general.model'] # Список OID-ов, которым можно возвращать пустой список
+        
         try:
             process = ["snmpwalk", "-Pe", "-v", "2c", "-c", self.community_string, f"-On{'x' if hex else ''}",
                        *([custom_option] if custom_option else []), self.ip_address, *([oid] if oid else [])]
@@ -160,6 +162,10 @@ class SNMPDevice:
                         output = regex_action.action(re_out)
                         # Собираем результаты в список out
                         out += [output]
+            
+            if len(out) == 0 and oid not in permissible_oids:
+                raise Error(f'{oid} вернул пустой список')
+
             return out
         
         except subprocess.CalledProcessError as e:
@@ -178,14 +184,14 @@ class SNMPDevice:
                     out += [lineSNMP]
             raise Error(f'Timeout Expired: {str(timeErr)}')
 
+        except Error:
+            raise  # Re-raise the specific error without further handling
+
         except Exception as e:
             raise Error(f'Unexpected error: {str(e)}')
 
     def get_hostname(self):
         value = self.snmpwalk(oid.general.hostname, 'DotSplit')
-        if not value:
-            raise Error("Hostname is undefined")
-
         self.hostname = value[0]
         return self.hostname
 
@@ -209,14 +215,9 @@ class SNMPDevice:
         raise Error("Model is undefined")
 
     def get_serial_number(self):
-        
         value = self.snmpwalk(oid.general.serial_number)
-        if value:
-            self.serial_number = next((i for i in value if i), None)
-            if self.serial_number:
-                return self.serial_number
-
-        raise Error("Serial number is undefined")
+        self.serial_number = next((i for i in value if i), None)
+        return self.serial_number
 
     def get_virtual_interfaces(self):
         
