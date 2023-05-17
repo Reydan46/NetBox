@@ -33,15 +33,40 @@ class Interface:
         
         # Преобразование IP-адреса и маски в префикс
         self.ip_with_prefix = f'{self.ip_address}/{IPAddress(self.mask).netmask_bits()}'
+    
+    def find_interfaces_cisco_catalyst(self):
+        pass
+
+    def find_interfaces_cisco_sg(self):
+        pass
+
+    def find_interfaces_huawei(self):
+        pass
+
+    def find_interfaces_zyxel(self):
+        pass
+
+    def find_interfaces_ubiquiti(self):
+        pass
 
 class SNMPDevice:
-#     # Dictionary for storing device's models
-#     models = {}
-#     with open('model.lists', 'r') as f:
-#         for line in f:
-#             model_type, models_line = line.split(':')
-#             models.update({model_type: list(filter(None, models_line.split(',')))})
+    models = {} # Dictionary for storing device's models
+    model_families = {
+            "cisco_catalyst": Interface.find_interfaces_cisco_catalyst,
+            "cisco_sg_300": Interface.find_interfaces_cisco_sg,
+            "cisco_sg_350": Interface.find_interfaces_cisco_sg,
+            "huawei": Interface.find_interfaces_huawei,
+            "zyxel": Interface.find_interfaces_zyxel,
+            "ubiquiti": Interface.find_interfaces_ubiquiti,
+        }
 
+    @classmethod
+    def load_models(cls, file_name):
+        with open(file_name, 'r') as f:
+            for line in f:
+                model_type, models_line = line.split(':')
+                cls.models.update({model_type: list(filter(None, models_line.rstrip().split(',')))})
+    
     def __init__(self, ip_address, community_string):
         self.community_string = community_string
         self.ip_address = ip_address
@@ -245,6 +270,14 @@ class SNMPDevice:
         
         return SVIs
 
+    def find_model_family(self):
+        for model_family, models in SNMPDevice.models.items():
+            if self.model in models:
+                self.model_family = model_family
+                return self.model_family
+
+        raise Error(f"{self.model} не найдена в models.list")
+    
 # # Виртуальный IP интерфейс
 # class SVI:
 #     def __init__(self, ip_address, mask, index, description, MTU, MAC):

@@ -111,6 +111,7 @@ for csv_device in devices_reader:
 
         # БЛОК РАБОТЫ С МОДУЛЕМ SNMP
         # создаем экземпляр класса SNMPDevice для взаимодействия с модулем SNMP
+        SNMPDevice.load_models('models.list') # загружаем словарь моделей по семействам
         snmp_device = SNMPDevice(
             switch_network_device.ip_address,
             switch_network_device.community_string
@@ -122,6 +123,7 @@ for csv_device in devices_reader:
         switch_network_device.model = snmp_device.get_model() # получаем модель
         switch_network_device.serial_number = snmp_device.get_serial_number() # получаем серийный номер
         switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces() # получаем список виртуальных интерфейсов
+        switch_network_device.model_family = snmp_device.find_model_family() # получаем семейство моделей
         
         switch_network_device.print_attributes()
     except Error as e:
