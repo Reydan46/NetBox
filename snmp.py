@@ -7,6 +7,8 @@
 import re
 import subprocess
 
+from netaddr import IPAddress
+
 import oid.general
 from errors import Error
 
@@ -19,6 +21,18 @@ class RegexAction:
     def __init__(self, pattern, action):
         self.pattern = pattern
         self.action = action
+
+class Interface:
+    def __init__(self, ip_address, mask, index, name, MTU, MAC):
+        self.ip_address = ip_address
+        self.mask = mask
+        self.index = index
+        self.name = name
+        self.MTU = MTU
+        self.MAC = MAC
+        
+        # Преобразование IP-адреса и маски в префикс
+        self.ip_with_prefix = f'{self.ip_address}/{IPAddress(self.mask).netmask_bits()}'
 
 class SNMPDevice:
 #     # Dictionary for storing device's models
@@ -204,6 +218,32 @@ class SNMPDevice:
 
         raise Error("Serial number is undefined")
 
+    def get_virtual_interfaces(self):
+        
+        ip_addresses = self.snmpwalk(oid.general.svi_ip_addresses, 'IP')
+        masks = self.snmpwalk(oid.general.svi_masks, 'IP')
+        indexes = self.snmpwalk(oid.general.svi_indexes, 'INT')
+        
+        SVIs = []
+        for i, index in enumerate(indexes):
+            if masks[i] == '0.0.0.0':
+                continue
+            
+            name = self.snmpwalk(f"{oid.general.si_int_name}.{index}")
+            MTU = self.snmpwalk(f"{oid.general.si_mtu}.{index}", 'INT')
+            MAC = self.snmpwalk(f"{oid.general.si_mac}.{index}", 'MAC', hex=True)
+            
+            SVIs += [Interface(
+                ip_address=ip_addresses[i],
+                mask=masks[i],
+                index=index,
+                name=name[0],
+                MTU=MTU[0],
+                MAC=MAC[0]
+            )]
+        
+        return SVIs
+
 # # Виртуальный IP интерфейс
 # class SVI:
 #     def __init__(self, ip_address, mask, index, description, MTU, MAC):
@@ -250,47 +290,6 @@ class SNMPDevice:
 #     def __repr__(self):
 #         tagged = f" Tagged: " + ','.join(self.tagged) if self.tagged else ""
 #         return f'{self.name} {self.index} ({self.mode}){f" Untagged: {self.untagged}" if self.untagged else ""}{tagged}'
-
-#     def getSVIs(self):
-#         indexes = self.getValue(
-#             snmpwalk(oid.general.svi_indexes, self.community_string, self.ip_address, 'INT', logger=self.logger))
-#         if self.error:
-#             return None, self.error
-#         ip_addresses = self.getValue(
-#             snmpwalk(oid.general.svi_ip_addresses, self.community_string, self.ip_address, 'IP'))
-#         if self.error:
-#             return None, self.error
-#         masks = self.getValue(
-#             snmpwalk(oid.general.svi_masks, self.community_string, self.ip_address, 'IP', logger=self.logger))
-#         if self.error:
-#             return None, self.error
-#         SVIs = []
-#         for i, index in enumerate(indexes):
-#             if masks[i] == '0.0.0.0':
-#                 continue
-
-#             description, self.error = snmpwalk(f"{oid.general.si_int_name}.{index}", self.community_string,
-#                                                self.ip_address, logger=self.logger)
-#             if self.error:
-#                 return
-#             MTU, self.error = snmpwalk(f"{oid.general.si_mtu}.{index}", self.community_string,
-#                                        self.ip_address, 'INT', logger=self.logger)
-#             if self.error:
-#                 return
-#             MAC, self.error = snmpwalk(f"{oid.general.si_mac}.{index}", self.community_string,
-#                                        self.ip_address, 'MAC', hex=True, logger=self.logger)
-#             if self.error:
-#                 return
-
-#             SVIs += [SVI(
-#                 ip_address=ip_addresses[i],
-#                 mask=masks[i],
-#                 index=index,
-#                 description=description[0],
-#                 MTU=MTU[0],
-#                 MAC=MAC[0]
-#             )]
-#         return SVIs, self.error
 
 #     def find_interfaces(self):
 #         def get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_data_dict):

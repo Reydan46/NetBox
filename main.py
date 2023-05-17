@@ -121,6 +121,7 @@ for csv_device in devices_reader:
             switch_network_device.get_role_from_hostname()
         switch_network_device.model = snmp_device.get_model() # получаем модель
         switch_network_device.serial_number = snmp_device.get_serial_number() # получаем серийный номер
+        switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces() # получаем список виртуальных интерфейсов
         
         switch_network_device.print_attributes()
     except Error as e:
