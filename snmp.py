@@ -80,11 +80,11 @@ class SNMPDevice:
 
             # Обработка ошибок
             if result.returncode != 0:
-                return result.stdout, f'Fail SNMP (oid {oid})! Return code: {result.returncode}'
+                raise Error(f'Fail SNMP (oid {oid})! Return code: {result.returncode}')
             elif 'No Such Object' in result.stdout:
-                return [], f'No Such Object available on this agent at this OID ({oid})'
+                raise Error(f'No Such Object available on this agent at this OID ({oid})')
             elif 'No Such Instance currently exists' in result.stdout:
-                return [], f'No Such Instance currently exists at this OID ({oid})'
+                raise Error(f'No Such Instance currently exists at this OID ({oid})')
     
             # Словарь паттернов парсинга
             regex_actions = {
@@ -355,7 +355,31 @@ class SNMPDevice:
         return interfaces
 
     def find_interfaces_cisco_sg(self):
-        pass
+        """
+        Finds and creates network interfaces for Cisco SG switches based on SNMP data.
+        Returns:
+            List of interface objects created using SNMP data.
+        """ 
+        interfaces = []
+        
+        mode_port_dict = self.__get_snmp_dict(oid.cisco_sg.mode_port, 'INDEX-INT')
+        untag_port_dict = self.__get_snmp_dict(oid.cisco_sg.untag_port[self.model_family], 'INDEX-INT')
+        tag_port_dict = self.__get_tag_dict_by_vlan(oid.cisco_sg.hex_tag_port)
+
+        for index, value in mode_port_dict.items():
+            if value == oid.cisco_sg.mode_port_state[self.model_family]["access"]:
+                interfaces.append(self.__create_interface_access(index, untag_port_dict))
+            elif value == oid.cisco_sg.mode_port_state[self.model_family]["tagged"]:
+                interfaces.append(self.__create_interface_tagged(index, untag_port_dict, tag_port_dict))
+                # Check if the last interface has both tagged and untagged VLANs,
+                # and if the untagged VLAN is also in the tagged VLANs list
+                if (interfaces[-1].tagged
+                    and interfaces[-1].untagged
+                    and interfaces[-1].untagged in interfaces[-1].tagged):
+                    # If yes, remove the untagged VLAN from the tagged VLANs list
+                    interfaces[-1].tagged.remove(interfaces[-1].untagged)
+
+        return interfaces
 
     def find_interfaces_huawei(self):
         pass
@@ -381,7 +405,7 @@ class SNMPDevice:
         Converts a list of tuples to a dictionary where the first item of each tuple is the key and the second item is the value.
         """
         return {interface: value for interface, value in indexes}
-
+    
     def __get_tag_dict_by_port(self, oid):
         """
         Метод для получения порт:влан словаря, для случаев, когда список вланов храниться в HEX
@@ -394,7 +418,22 @@ class SNMPDevice:
                     continue
                 tag_dict[port_index].append(vid)
         return tag_dict
+    
+    def __get_tag_dict_by_vlan(self, oid):
+        """
+        Метод для получения порт:влан словаря, для случаев, когда список портов храниться в HEX
+        """
+        output = self.snmpwalk(oid, 'INDEX-HEX')
 
+        tag_dict = defaultdict(list)
+        for vlan_id, hex_indexes in output:
+            if vlan_id == '1':
+                continue
+            for interface_index in self.__hex_to_binary_list(hex_indexes):
+                tag_dict[interface_index].append(vlan_id)
+
+        return tag_dict
+    
     def __hex_to_binary_list(self, hex_str, inc=1):
         binary_str = self.__hex_to_binary(hex_str)
         return self.__binary_to_list(binary_str, inc)
@@ -483,24 +522,6 @@ class SNMPDevice:
 #         tagged = f" Tagged: " + ','.join(self.tagged) if self.tagged else ""
 #         return f'{self.name} {self.index} ({self.mode}){f" Untagged: {self.untagged}" if self.untagged else ""}{tagged}'
 
-#     def __get_tag_dict_by_vlan(self, oid):
-#         """
-#         Метод для получения порт:влан словаря, для случаев, когда список портов храниться в HEX
-#         """
-#         output, self.error = snmpwalk(oid, self.community_string, self.ip_address, 'INDEX-HEX',
-#                                       logger=self.logger)
-#         if self.error:
-#             return {}
-
-#         tag_dict = defaultdict(list)
-#         for vlan_id, hex_indexes in output:
-#             if vlan_id == '1':
-#                 continue
-#             for interface_index in self.__hex_to_binary_list(hex_indexes):
-#                 tag_dict[interface_index].append(vlan_id)
-
-#         return tag_dict
-
 #     def find_interfaces_cisco_catalyst(self):
 #         """
 #         This function finds the interfaces in a Cisco Catalyst device and returns them in a list.
@@ -522,33 +543,6 @@ class SNMPDevice:
 #                 interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_port_dict))
 #             elif value == oid.cisco_catalyst.mode_port_state["tagged-noneg"]:
 #                 interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_noneg_port_dict))
-
-#         return interfaces
-
-#     def find_interfaces_cisco_sg(self):
-#         """
-#         Finds and creates network interfaces for Cisco SG switches based on SNMP data.
-#         Returns:
-#             List of interface objects created using SNMP data.
-#         """ 
-#         interfaces = []
-        
-#         mode_port_dict = self.__get_snmp_dict(oid.cisco_sg.mode_port, 'INDEX-INT')
-#         untag_port_dict = self.__get_snmp_dict(oid.cisco_sg.untag_port[self.family_model], 'INDEX-INT')
-#         tag_port_dict = self.__get_tag_dict_by_vlan(oid.cisco_sg.hex_tag_port)
-
-#         for index, value in mode_port_dict.items():
-#             if value == oid.cisco_sg.mode_port_state[self.family_model]["access"]:
-#                 interfaces.append(self.__create_interface_access(index, untag_port_dict))
-#             elif value == oid.cisco_sg.mode_port_state[self.family_model]["tagged"]:
-#                 interfaces.append(self.__create_interface_tagged(index, untag_port_dict, tag_port_dict))
-#                 # Check if the last interface has both tagged and untagged VLANs,
-#                 # and if the untagged VLAN is also in the tagged VLANs list
-#                 if (interfaces[-1].tagged
-#                     and interfaces[-1].untagged
-#                     and interfaces[-1].untagged in interfaces[-1].tagged):
-#                     # If yes, remove the untagged VLAN from the tagged VLANs list
-#                     interfaces[-1].tagged.remove(interfaces[-1].untagged)
 
 #         return interfaces
 
