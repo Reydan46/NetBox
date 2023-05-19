@@ -79,9 +79,9 @@ hex_tag_noneg_port = "1.3.6.1.4.1.9.9.46.1.6.1.1.4"
 # 1.3.6.1.4.1.9.9.46.1.6.1.1.13.10102 = INTEGER: 2
 mode_port = "1.3.6.1.4.1.9.9.46.1.6.1.1.13"
 mode_port_state = {
-    "access": "2",
-    "tagged": "1",
-    "tagged-noneg": "5",
+    "access": ["2", "4"],
+    "tagged": ["1"],
+    "tagged-noneg": ["5"],
 }
 
 # dot3adAggPortListPorts

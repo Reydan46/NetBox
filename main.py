@@ -20,9 +20,10 @@ class NetworkDevice:
 
     # Временный для дебага - потом удалить
     def print_attributes(self):
+        print('NetworkDevice attributes:')
         for attribute, value in self.__dict__.items():
             print(f"{attribute}: {value}")
-        print('-' * 40)
+        print('=' * 80)
 
     # Find and set the site_slug attribute based on the IP address
     def find_site_slug(self):
@@ -94,6 +95,7 @@ devices_reader, act = csv_reader()
 # ========================================================================
 error_messages = {}
 for csv_device in devices_reader:
+    switch_network_device = None
     try:
         # Условия для пропуска устройства
         if (act == 'exclude' and csv_device['act'] == '-') or \
@@ -124,16 +126,20 @@ for csv_device in devices_reader:
         switch_network_device.serial_number = snmp_device.get_serial_number() # получаем серийный номер
         switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces() # получаем список виртуальных интерфейсов
         switch_network_device.model_family = snmp_device.find_model_family() # получаем семейство моделей
-        
-        switch_network_device.print_attributes()
+        switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces() # получаем список физических интерфейсов
     except Error as e:
         error_messages[csv_device['ip device'].strip()] = str(e)
         continue
+    finally:
+        if switch_network_device is not None:
+            switch_network_device.print_attributes()
+            input('Нажмите Enter для продолжения...')
 
 # ВЫВОД ОШИБОК
 # ========================================================================
 if error_messages:
     table = PrettyTable(["IP", "Error"])
+    table.align["IP"] = "l"
     table.align["Error"] = "l"
     table.max_width = 75
     table.valign["Error"] = "t"

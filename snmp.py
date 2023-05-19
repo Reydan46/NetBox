@@ -6,14 +6,14 @@
 # from collections import defaultdict
 import re
 import subprocess
+from collections import defaultdict
 
 from netaddr import IPAddress
 
+import oid.cisco_catalyst
+import oid.cisco_sg
 import oid.general
 from errors import Error
-
-# import oid.cisco_sg
-# import oid.cisco_catalyst
 
 
 # Класс для группировки регулярного выражения и формата его выводимого результата
@@ -23,42 +23,30 @@ class RegexAction:
         self.action = action
 
 class Interface:
-    def __init__(self, ip_address, mask, index, name, MTU, MAC):
+    def __init__(self, index, ip_address=None, mask=None, name=None, MTU=None, MAC=None, mode=None, untagged=None, tagged=None):
         self.ip_address = ip_address
         self.mask = mask
         self.index = index
         self.name = name
-        self.MTU = MTU
-        self.MAC = MAC
+        self.mtu = MTU
+        self.mac = MAC
+        self.mode = mode
+        self.untagged = untagged
+        self.tagged = tagged
         
         # Преобразование IP-адреса и маски в префикс
-        self.ip_with_prefix = f'{self.ip_address}/{IPAddress(self.mask).netmask_bits()}'
-    
-    def find_interfaces_cisco_catalyst(self):
-        pass
+        if self.ip_address and self.mask:
+            self.ip_with_prefix = f'{self.ip_address}/{IPAddress(self.mask).netmask_bits()}'
 
-    def find_interfaces_cisco_sg(self):
-        pass
-
-    def find_interfaces_huawei(self):
-        pass
-
-    def find_interfaces_zyxel(self):
-        pass
-
-    def find_interfaces_ubiquiti(self):
-        pass
+    # Временный для дебага - потом удалить
+    def print_attributes(self, title=''):
+        print(title)
+        for attribute, value in self.__dict__.items():
+            print(f"{attribute}: {value}")
+        print('-' * 40)
 
 class SNMPDevice:
     models = {} # Dictionary for storing device's models
-    model_families = {
-            "cisco_catalyst": Interface.find_interfaces_cisco_catalyst,
-            "cisco_sg_300": Interface.find_interfaces_cisco_sg,
-            "cisco_sg_350": Interface.find_interfaces_cisco_sg,
-            "huawei": Interface.find_interfaces_huawei,
-            "zyxel": Interface.find_interfaces_zyxel,
-            "ubiquiti": Interface.find_interfaces_ubiquiti,
-        }
 
     @classmethod
     def load_models(cls, file_name):
@@ -71,29 +59,15 @@ class SNMPDevice:
         self.community_string = community_string
         self.ip_address = ip_address
 
-#     @staticmethod
-#     def __hex_to_binary(hex_str):
-#         # Преобразует шестнадцатеричное число в двоичное и удаляет префикс '0b'
-#         binary_str = bin(int(hex_str, 16))[2:]
-#         # Дополняем нулями слева, чтобы каждый шестнадцатеричный символ соответствовал 4 двоичным
-#         binary_str = binary_str.zfill(len(hex_str) * 4)
-#         return binary_str
-
-#     @staticmethod
-#     def __binary_to_list(binary_str, inc=1):
-#         return [str(i + inc) for i, bit in enumerate(binary_str) if bit == '1']
-
-#     def __hex_to_binary_list(self, hex_str, inc=1):
-#         binary_str = self.__hex_to_binary(hex_str)
-#         return self.__binary_to_list(binary_str, inc)
-
-#     @staticmethod
-#     def __indexes_to_dict(indexes):
-#         """
-#         Converts a list of tuples to a dictionary where the first item of each tuple is the key and the second item is the value.
-#         """
-#         return {interface: value for interface, value in indexes}
-
+        self.model_families = {
+            "cisco_catalyst": self.find_interfaces_cisco_catalyst,
+            "cisco_sg_300": self.find_interfaces_cisco_sg,
+            "cisco_sg_350": self.find_interfaces_cisco_sg,
+            # "huawei": self.find_interfaces_huawei,
+            # "zyxel": self.find_interfaces_zyxel,
+            # "ubiquiti": self.find_interfaces_ubiquiti,
+        }
+    
     def snmpwalk(self, oid, typeSNMP='', hex=False, custom_option=None, timeout_process=None):
         out = []
         permissible_oids = ['oid.general.model'] # Список OID-ов, которым можно возвращать пустой список
@@ -151,7 +125,7 @@ class SNMPDevice:
                     lambda re_out: [re_out.group(1), re_out.group(2)]
                 ),
                 'INDEX-HEX': RegexAction(
-                    r'.(\d+) = [\w\-]+: (([0-9A-Fa-f]{2} ?\n?){126,})',
+                    r'.(\d+) = [\w\-]+: (([0-9A-Fa-f]{2} ?\n?){1,})',
                     lambda re_out: [re_out.group(1),
                                     re_out.group(2).strip().replace(" ", '').replace("\n", '').upper()]
                 ),
@@ -267,7 +241,8 @@ class SNMPDevice:
                 MTU=MTU[0],
                 MAC=MAC[0]
             )]
-        
+
+            SVIs[-1].print_attributes('SVI:')
         return SVIs
 
     def find_model_family(self):
@@ -277,7 +252,190 @@ class SNMPDevice:
                 return self.model_family
 
         raise Error(f"{self.model} не найдена в models.list")
+
+#   БЛОК ПОЛУЧЕНИЯ ИНТЕРФЕЙСОВ
+# ========================================================================
+    def get_physical_interfaces(self):
+        def get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_data_dict):
+            """
+            Get LLDP data by index from dictionaries of interface names and LLDP data.
+            """
+            lldp_data_by_index = {}
+            for int_index, int_name in int_name_dict.items():
+                lldp_index = None
+                for idx, name in lldp_loc_port_dict.items():
+                    if name.startswith(int_name):
+                        lldp_index = idx
+                        break
+                if lldp_index:
+                    lldp_data = lldp_data_dict.get(lldp_index)
+                    if lldp_data:
+                        lldp_data_by_index[int_index] = lldp_data
+            return lldp_data_by_index
+
+        def get_snmp_data(oid, data_type, hex_output=False):
+            output = self.snmpwalk(oid, typeSNMP=data_type, hex=hex_output)
+            return self.__indexes_to_dict(output)
+
+        def hex2string(hex):
+            if hex:
+                return "".join([chr(int(x, 16)) for x in hex.split()]).encode('latin1').decode('utf-8')
+            return ""
+
+        try:
+            get_interfaces_func = self.model_families[self.model_family]
+        except KeyError:
+            raise Error(f'Для семейства "{self.model_family}" не назначена get_interfaces_func()')
+        
+        interfaces = get_interfaces_func()
+        if not interfaces:
+            raise Error(f"get_interfaces_func() вернула пустой список интерфейсов")
+
+        int_name_dict = get_snmp_data(oid.general.si_int_name, 'INDEX-DESC')
+        mtu_dict = get_snmp_data(oid.general.si_mtu, 'INDEX-INT')
+        mac_dict = get_snmp_data(oid.general.si_mac, 'INDEX-MAC', hex_output=True)
+        desc_dict = get_snmp_data(oid.general.si_description, 'INDEX-DESC-HEX', hex_output=True)
+        
+        lldp_loc_port_dict = get_snmp_data(oid.general.lldp_loc_port, 'INDEX-DESC')
+        lldp_rem_name_dict = get_snmp_data(oid.general.lldp_rem_name, 'PREINDEX-DESC')      
+        lldp_rem_name_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_name_dict) 
+        lldp_rem_port_dict = get_snmp_data(oid.general.lldp_rem_port, 'PREINDEX-DESC')      
+        lldp_rem_port_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_port_dict) 
+        lldp_rem_mac_dict = get_snmp_data(oid.general.lldp_rem_mac, 'PREINDEX-MAC', hex_output=True)
+        lldp_rem_mac_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_mac_dict)
+        
+        # vlans = []
+        for interface in interfaces:
+            interface.name = int_name_dict[interface.index]
+            interface.mtu = mtu_dict[interface.index]
+            interface.mac = mac_dict[interface.index]
+            interface.desc = hex2string(desc_dict[interface.index])
+            # Не у всех интерфейсов есть lldp data
+            lldp_rem_name = lldp_rem_name_by_index.get(interface.index)
+            lldp_rem_mac = lldp_rem_mac_by_index.get(interface.index,'').replace(" ", ':').upper()
+            lldp_rem_port = lldp_rem_port_by_index.get(interface.index)
+            interface.lldp_rem = {
+                "name": lldp_rem_name,
+                "mac": lldp_rem_mac,
+                "port": lldp_rem_port,
+            }
+            # Предполагаем, что интерфейсы начинающиеся с "P" являются LAG
+            if interface.name[0].lower() == 'p':
+                interface.type = 'lag'
+
+            # if interface.untagged:
+            #     if interface.untagged not in vlans:
+            #         vlans += [interface.untagged]
+            # if interface.tagged:
+            #     for vid in interface.tagged:
+            #         if vid not in vlans:
+            #             vlans += [vid]
+            interface.print_attributes('Interface:')
+        return interfaces #, sorted(vlans, key=int)
+
+# Вендорозависимые методы интерфейсов
+# ========================================================================
+    def find_interfaces_cisco_catalyst(self):
+        interfaces = []
+
+        mode_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.mode_port, 'INDEX-INT')
+        native_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.native_port, 'INDEX-INT')
+        untag_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.untag_port, 'INDEX-INT')
+        tag_port_dict = self.__get_tag_dict_by_port(oid.cisco_catalyst.hex_tag_port)
+        tag_noneg_port_dict = self.__get_tag_dict_by_port(oid.cisco_catalyst.hex_tag_noneg_port)
+
+        for index, value in mode_port_dict.items():
+            if value in oid.cisco_catalyst.mode_port_state["access"]:
+                interfaces.append(self.__create_interface_access(index, untag_port_dict))
+            elif value in oid.cisco_catalyst.mode_port_state["tagged"]:
+                interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_port_dict))
+            elif value in oid.cisco_catalyst.mode_port_state["tagged-noneg"]:
+                interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_noneg_port_dict))
+
+        return interfaces
+
+    def find_interfaces_cisco_sg(self):
+        pass
+
+    def find_interfaces_huawei(self):
+        pass
+
+    def find_interfaces_zyxel(self):
+        pass
+
+    def find_interfaces_ubiquiti(self):
+        pass
     
+#   Хэлпер-методы
+# ========================================================================
+    def __get_snmp_dict(self, oid, snmp_type):
+        """
+        This is a helper function that uses SNMP to get a dictionary of the specified OID.
+        """
+        output = self.snmpwalk(oid, snmp_type)
+        return self.__indexes_to_dict(output)
+
+    @staticmethod
+    def __indexes_to_dict(indexes):
+        """
+        Converts a list of tuples to a dictionary where the first item of each tuple is the key and the second item is the value.
+        """
+        return {interface: value for interface, value in indexes}
+
+    def __get_tag_dict_by_port(self, oid):
+        """
+        Метод для получения порт:влан словаря, для случаев, когда список вланов храниться в HEX
+        """
+        output = self.snmpwalk(oid, 'INDEX-HEX', True)
+        tag_dict = defaultdict(list)
+        for port_index, hex_vlans in output:
+            for vid in self.__hex_to_binary_list(hex_vlans, 0):
+                if vid == '1':
+                    continue
+                tag_dict[port_index].append(vid)
+        return tag_dict
+
+    def __hex_to_binary_list(self, hex_str, inc=1):
+        binary_str = self.__hex_to_binary(hex_str)
+        return self.__binary_to_list(binary_str, inc)
+
+    @staticmethod
+    def __hex_to_binary(hex_str):
+        # Преобразует шестнадцатеричное число в двоичное и удаляет префикс '0b'
+        binary_str = bin(int(hex_str, 16))[2:]
+        # Дополняем нулями слева, чтобы каждый шестнадцатеричный символ соответствовал 4 двоичным
+        binary_str = binary_str.zfill(len(hex_str) * 4)
+        return binary_str
+
+    @staticmethod
+    def __binary_to_list(binary_str, inc=1):
+        return [str(i + inc) for i, bit in enumerate(binary_str) if bit == '1']
+
+    def __create_interface_access(self, index, untag_port_dict):
+        """
+        This is a helper function that creates an access interface object.
+        """
+        return Interface(
+            index=index,
+            untagged=untag_port_dict[index] if index in untag_port_dict and untag_port_dict[index] != '1' else None,
+            mode='access',
+        )
+
+    def __create_interface_tagged(self, index, native_port_dict, tag_dict):
+        """
+        This is a helper function that creates a tagged interface object.
+        """
+        untagged = native_port_dict.get(index)
+        if untagged in ('1', '0'):
+            untagged = None
+    
+        tagged = tag_dict.get(index, [])
+        mode = 'tagged'
+        if (len(tagged) == 1 and tagged[0] == untagged) or not tagged:
+            mode = 'tagged-all'
+        return Interface(index=index, untagged=untagged, mode=mode, tagged=tagged)
+# ========================================================================
+
 # # Виртуальный IP интерфейс
 # class SVI:
 #     def __init__(self, ip_address, mask, index, description, MTU, MAC):
@@ -325,132 +483,6 @@ class SNMPDevice:
 #         tagged = f" Tagged: " + ','.join(self.tagged) if self.tagged else ""
 #         return f'{self.name} {self.index} ({self.mode}){f" Untagged: {self.untagged}" if self.untagged else ""}{tagged}'
 
-#     def find_interfaces(self):
-#         def get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_data_dict):
-#             """
-#             Get LLDP data by index from dictionaries of interface names and LLDP data.
-#             """
-#             lldp_data_by_index = {}
-#             for int_index, int_name in int_name_dict.items():
-#                 lldp_index = None
-#                 for idx, name in lldp_loc_port_dict.items():
-#                     if name.startswith(int_name):
-#                         lldp_index = idx
-#                         break
-#                 if lldp_index:
-#                     lldp_data = lldp_data_dict.get(lldp_index)
-#                     if lldp_data:
-#                         lldp_data_by_index[int_index] = lldp_data
-#             return lldp_data_by_index
-
-#         def get_snmp_data(oid, data_type, hex_output=False):
-#             output, self.error = snmpwalk(oid, self.community_string, self.ip_address, data_type, hex=hex_output, logger=self.logger)
-#             if self.error:
-#                 return {}, []
-#             return self.__indexes_to_dict(output)
-
-#         self.error = ''
-
-#         if not self.model:
-#             self.error = 'Model is empty!'
-#         elif not self.ip_address:
-#             self.error = 'IP address is Empty!'
-#         elif not self.community_string:
-#             self.error = 'Community string is Empty!'
-
-#         if self.error:
-#             return [], []
-
-#         self.logger.info(f'Find model "{self.model}" in model.lists')
-#         interfaces = []
-#         model_families = {
-#             "cisco_catalyst": self.find_interfaces_cisco_catalyst,
-#             "cisco_sg_300": self.find_interfaces_cisco_sg,
-#             "cisco_sg_350": self.find_interfaces_cisco_sg,
-#             "huawei": self.find_interfaces_huawei,
-#             "zyxel": self.find_interfaces_zyxel,
-#             "ubiquiti": self.find_interfaces_ubiquiti,
-#         }
-
-#         flag_find_family = False
-#         for family, get_interfaces_func in model_families.items():
-#             if self.model in self.models[family]:
-#                 self.family_model = family
-#                 self.logger.info(f'Run block find_interfaces for "{self.family_model}"')
-#                 interfaces = get_interfaces_func()
-#                 flag_find_family = True
-#                 break
-
-#         if not flag_find_family:
-#             self.error = f'Model {self.model} is not found in model.lists!'
-
-#         if self.error:
-#             return [], []
-
-#         int_name_dict = get_snmp_data(oid.general.si_int_name, 'INDEX-DESC')
-#         mtu_dict = get_snmp_data(oid.general.si_mtu, 'INDEX-INT')
-#         mac_dict = get_snmp_data(oid.general.si_mac, 'INDEX-MAC', hex_output=True)
-#         desc_dict = get_snmp_data(oid.general.si_description, 'INDEX-DESC-HEX', hex_output=True)
-        
-#         lldp_loc_port_dict = get_snmp_data(oid.general.lldp_loc_port, 'INDEX-DESC')
-#         lldp_rem_name_dict = get_snmp_data(oid.general.lldp_rem_name, 'PREINDEX-DESC')      
-#         lldp_rem_name_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_name_dict) 
-#         lldp_rem_mac_dict = get_snmp_data(oid.general.lldp_rem_mac, 'PREINDEX-MAC', hex_output=True)
-#         lldp_rem_mac_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_mac_dict)
-        
-#         vlans = []
-#         for interface in interfaces:
-#             interface.name = int_name_dict[interface.index]
-#             interface.mtu = mtu_dict[interface.index]
-#             interface.mac = mac_dict[interface.index]
-#             interface.desc = hex2string(desc_dict[interface.index])
-#             # Предполагаем, что интерфейсы начинающиеся с "P" являются LAG
-#             if interface.name[0].lower() == 'p':
-#                 interface.type = 'lag'
-
-#             if interface.untagged:
-#                 if interface.untagged not in vlans:
-#                     vlans += [interface.untagged]
-#             if interface.tagged:
-#                 for vid in interface.tagged:
-#                     if vid not in vlans:
-#                         vlans += [vid]
-
-#             attribute_dict = {
-#                 "lldp_rem_mac": lldp_rem_mac_by_index,
-#                 "lldp_rem_name": lldp_rem_name_by_index
-#             }
-#             for attribute, data in attribute_dict.items():
-#                 if interface.index in data:
-#                     setattr(interface, attribute, data[interface.index])
-#                     self.logger.debug(f'{interface.name}: {getattr(interface, attribute)}')
-
-#         return interfaces, sorted(vlans, key=int)
-
-#     def __get_snmp_dict(self, oid, snmp_type):
-#         """
-#         This is a helper function that uses SNMP to get a dictionary of the specified OID.
-#         """
-#         output, self.error = snmpwalk(oid, self.community_string, self.ip_address, snmp_type, logger=self.logger)
-#         if self.error:
-#             return {}
-#         return self.__indexes_to_dict(output)
-
-#     def __get_tag_dict_by_port(self, oid):
-#         """
-#         Метод для получения порт:влан словаря, для случаев, когда список вланов храниться в HEX
-#         """
-#         output, self.error = snmpwalk(oid, self.community_string, self.ip_address, 'INDEX-HEX', logger=self.logger)
-#         if self.error:
-#             return {}
-#         tag_dict = defaultdict(list)
-#         for port_index, hex_vlans in output:
-#             for vid in self.__hex_to_binary_list(hex_vlans, 0):
-#                 if vid == '1':
-#                     continue
-#                 tag_dict[port_index].append(vid)
-#         return tag_dict
-
 #     def __get_tag_dict_by_vlan(self, oid):
 #         """
 #         Метод для получения порт:влан словаря, для случаев, когда список портов храниться в HEX
@@ -468,30 +500,6 @@ class SNMPDevice:
 #                 tag_dict[interface_index].append(vlan_id)
 
 #         return tag_dict
-
-#     def __create_interface_access(self, index, untag_port_dict):
-#         """
-#         This is a helper function that creates an access interface object.
-#         """
-#         return Interface(
-#             index=index,
-#             untagged=untag_port_dict[index] if index in untag_port_dict and untag_port_dict[index] != '1' else None,
-#             mode='access',
-#         )
-
-#     def __create_interface_tagged(self, index, native_port_dict, tag_dict):
-#         """
-#         This is a helper function that creates a tagged interface object.
-#         """
-#         untagged = native_port_dict.get(index)
-#         if untagged in ('1', '0'):
-#             untagged = None
-    
-#         tagged = tag_dict.get(index, [])
-#         mode = 'tagged'
-#         if (len(tagged) == 1 and tagged[0] == untagged) or not tagged:
-#             mode = 'tagged-all'
-#         return Interface(index=index, untagged=untagged, mode=mode, tagged=tagged)
 
 #     def find_interfaces_cisco_catalyst(self):
 #         """
@@ -552,12 +560,6 @@ class SNMPDevice:
 
 #     def find_interfaces_ubiquiti(self):
 #         return []
-
-
-# def hex2string(hex):
-#     if hex:
-#         return "".join([chr(int(x, 16)) for x in hex.split()]).encode('latin1').decode('utf-8')
-#     return ""
 
 
 # if __name__ == "__main__":
