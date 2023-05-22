@@ -4,7 +4,7 @@ import re
 
 from prettytable import PrettyTable
 
-from errors import Error
+from errors import Error, NonCriticalError
 from snmp import SNMPDevice
 
 # ========================================================================
@@ -60,12 +60,22 @@ class NetworkDevice:
             self.role = role_mapping.get(role_out.group(1))
         else:
             raise Error("Could not determine role from hostname")
+    
+    def get_vlans(self):
+        self.vlans = []
+        for interface in self.physical_interfaces:
+            if interface.untagged:
+                if interface.untagged not in self.vlans:
+                    self.vlans += [interface.untagged]
+            if interface.tagged:
+                for vid in interface.tagged:
+                    if vid not in self.vlans:
+                        self.vlans += [vid]
 
 # ========================================================================
 #                                 Функции
 # ========================================================================
 def csv_reader():
-    devices_with_error = []
     devices_file = open('devices.csv', newline='')
     devices_reader = csv.DictReader(devices_file, delimiter=';')
 
@@ -127,6 +137,7 @@ for csv_device in devices_reader:
         switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces() # получаем список виртуальных интерфейсов
         switch_network_device.model_family = snmp_device.find_model_family() # получаем семейство моделей
         switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces() # получаем список физических интерфейсов
+        switch_network_device.get_vlans() # получаем список вланов
     except Error as e:
         error_messages[csv_device['ip device'].strip()] = str(e)
         continue
@@ -137,12 +148,20 @@ for csv_device in devices_reader:
 
 # ВЫВОД ОШИБОК
 # ========================================================================
-if error_messages:
+# Merge the error messages into a single list
+all_error_messages = Error.error_messages + NonCriticalError.error_messages
+
+# Flatten the list of dictionaries into a single dictionary
+merged_error_messages = {k: v for d in all_error_messages for k, v in d.items()}
+
+# Print errors in a PrettyTable
+if merged_error_messages:
     table = PrettyTable(["IP", "Error"])
     table.align["IP"] = "l"
     table.align["Error"] = "l"
     table.max_width = 75
     table.valign["Error"] = "t"
-    for i in error_messages.items():
-        table.add_row([i[0], i[1]])
+    for ip, error_message in merged_error_messages.items():
+        table.add_row([ip, error_message])
     print(table)
+
