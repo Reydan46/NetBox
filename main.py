@@ -13,6 +13,19 @@ from snmp import SNMPDevice
 
 class NetworkDevice:
     vlans = {}
+    sites_dict = {} # Class attribute to store the shared sites dictionary
+
+    # Class method to initialize the sites_dict from prefixes.csv
+    @classmethod
+    def initialize_sites_dict(cls):
+        with open('prefixes.csv') as f:
+            reader = csv.DictReader(f, delimiter=';')
+            for row in reader:
+                site_slug = row['site']
+                ip_range = row['prefix']
+                cls.sites_dict[site_slug] = ipaddress.ip_network(
+                    ip_range, strict=False)
+
     def __init__(self, ip_address, role, community_string):
         self.ip_address: str = ip_address
         self.community_string: str = community_string
@@ -32,29 +45,15 @@ class NetworkDevice:
 
     # Find and set the site_slug attribute based on the IP address
     def find_site_slug(self):
-        # Read the CSV file with site and IP prefix information, and store in a sites_dict variable
-        sites_dict = {}
-        with open('prefixes.csv') as f:
-            reader = csv.DictReader(f, delimiter=';')
-            for row in reader:
-                site_slug = row['site']
-                ip_range = row['prefix']
-                sites_dict[site_slug] = ipaddress.ip_network(
-                    ip_range, strict=False)
-
-        # Check if the NetworkDevice IP address is in one of the IP ranges,
-        # and store the matching site_slug in the NetworkDevice instance
-        site_found = False
-        for site_slug, ip_range in sites_dict.items():
+        # Check if the NetworkDevice IP address is in one of the IP ranges
+        for site_slug, ip_range in self.sites_dict.items():
             if ipaddress.ip_address(self.ip_address) in ip_range:
                 self.site_slug = site_slug
-                site_found = True
                 break
-
-        # Raise an error if the site is not found for the given IP address
-        if not site_found:
-            raise Error(f"Site not found for IP address {self.ip_address}")
-
+        else:
+            # Raise an error if the site is not found for the given IP address
+            raise Error(f"Site not found for IP address {self.ip_address}", self.ip_address)
+    
     def get_role_from_hostname(self):
         role_out = re.search(r'-([p]?sw)\d+', self.hostname)
         role_mapping = {
@@ -111,7 +110,7 @@ devices_reader, act = csv_reader()
 
 # ГЛАВНЫЙ ЦИКЛ
 # ========================================================================
-error_messages = {}
+NetworkDevice.initialize_sites_dict() # Получаем словарь сайтов из prefixes.csv
 for csv_device in devices_reader:
     switch_network_device = None
     try:
