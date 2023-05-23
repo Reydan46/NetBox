@@ -9,6 +9,7 @@ class Error(Exception):
     @classmethod
     def store_error(cls, ip, message):
         cls.error_messages.append({ip: message})
-    
+
 class NonCriticalError(Error):
-    pass
+    def __init__(self, message, ip=None):
+        super().__init__(message, ip)

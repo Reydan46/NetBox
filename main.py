@@ -12,7 +12,7 @@ from snmp import SNMPDevice
 # ========================================================================
 
 class NetworkDevice:
-
+    vlans = {}
     def __init__(self, ip_address, role, community_string):
         self.ip_address: str = ip_address
         self.community_string: str = community_string
@@ -21,8 +21,13 @@ class NetworkDevice:
     # Временный для дебага - потом удалить
     def print_attributes(self):
         print('NetworkDevice attributes:')
+        # Печатаем аттрибуты экземпляра
         for attribute, value in self.__dict__.items():
             print(f"{attribute}: {value}")
+        # Затем аттрибуты класса
+        for attribute, value in vars(self.__class__).items():
+            if not attribute.startswith('__') and not callable(value):
+                print(f"{attribute}: {value}")
         print('=' * 80)
 
     # Find and set the site_slug attribute based on the IP address
@@ -62,15 +67,18 @@ class NetworkDevice:
             raise Error("Could not determine role from hostname")
     
     def get_vlans(self):
-        self.vlans = []
+        local_vlans = set()
         for interface in self.physical_interfaces:
-            if interface.untagged:
-                if interface.untagged not in self.vlans:
-                    self.vlans += [interface.untagged]
-            if interface.tagged:
-                for vid in interface.tagged:
-                    if vid not in self.vlans:
-                        self.vlans += [vid]
+            untagged_vid, tagged_vids = interface.untagged, interface.tagged
+            if untagged_vid:
+                local_vlans.add(untagged_vid)
+            if tagged_vids:
+                local_vlans.update(tagged_vids)
+
+        if self.site_slug in self.__class__.vlans:
+            self.__class__.vlans[self.site_slug].update(local_vlans)
+        else:
+            self.__class__.vlans[self.site_slug] = local_vlans
 
 # ========================================================================
 #                                 Функции

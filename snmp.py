@@ -73,6 +73,7 @@ class SNMPDevice:
         # Список OID-ов, которым можно возвращать пустой список
         permissible_oids = ["1.3.6.1.2.1.1.1.0",
                             "1.0.8802.1.1.2.1.4.1.1.7",
+                            "1.0.8802.1.1.2.1.4.1.1.9",
                             ]
         
         try:
@@ -124,7 +125,7 @@ class SNMPDevice:
                     lambda re_out: [re_out.group(1), re_out.group(2)]
                 ),
                 'PREINDEX-DESC': RegexAction(
-                    r'.(\d+).\d+ = [\w\-]*:? ?"([^"]*?)\.[^"]*"',
+                    r'.(\d+).\d+ = [\w\-]*:? ?"([^"]*?)(?:\.[^"]*)?"\n',
                     lambda re_out: [re_out.group(1), re_out.group(2)]
                 ),
                 'INDEX-HEX': RegexAction(
@@ -177,7 +178,7 @@ class SNMPDevice:
         #         raise Error(f'No Such Instance currently exists at this OID ({oid})')
         #     else:
         #         raise Error(f'Fail SNMP (oid {oid})! Return code: {e.returncode}')
-        
+
         except subprocess.TimeoutExpired as timeErr:
             if len(timeErr.stdout) > 0:
                 for lineSNMP in timeErr.stdout[1:].split('\n.'):
@@ -185,12 +186,12 @@ class SNMPDevice:
                         continue
                     out += [lineSNMP]
             raise Error(f'Timeout Expired: {str(timeErr)}', self.ip_address)
-
+        
+        except NonCriticalError:
+            return out
         except Error:
             raise  # Re-raise the specific error without further handling
-        except NonCriticalError:
-            raise
-        
+
         except Exception as e:
             raise Error(f'Unexpected error: {str(e)}')
 
@@ -296,24 +297,19 @@ class SNMPDevice:
         if not interfaces:
             raise Error(f"get_interfaces_func() вернула пустой список интерфейсов", self.ip_address)
 
-        try:
-            int_name_dict = get_snmp_data(oid.general.si_int_name, 'INDEX-DESC')
-            mtu_dict = get_snmp_data(oid.general.si_mtu, 'INDEX-INT')
-            mac_dict = get_snmp_data(oid.general.si_mac, 'INDEX-MAC', hex_output=True)
-            desc_dict = get_snmp_data(oid.general.si_description, 'INDEX-DESC-HEX', hex_output=True)
-
-            lldp_loc_port_dict = get_snmp_data(oid.general.lldp_loc_port, 'INDEX-DESC')
-            lldp_rem_name_dict = get_snmp_data(oid.general.lldp_rem_name, 'PREINDEX-DESC')      
-            lldp_rem_name_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_name_dict) 
-            lldp_rem_port_dict = get_snmp_data(oid.general.lldp_rem_port, 'PREINDEX-DESC')      
-            lldp_rem_port_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_port_dict) 
-            lldp_rem_mac_dict = get_snmp_data(oid.general.lldp_rem_mac, 'PREINDEX-MAC', hex_output=True)
-            lldp_rem_mac_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_mac_dict)
-            
-        except NonCriticalError:
-            pass
+        int_name_dict = get_snmp_data(oid.general.si_int_name, 'INDEX-DESC')
+        mtu_dict = get_snmp_data(oid.general.si_mtu, 'INDEX-INT')
+        mac_dict = get_snmp_data(oid.general.si_mac, 'INDEX-MAC', hex_output=True)
+        desc_dict = get_snmp_data(oid.general.si_description, 'INDEX-DESC-HEX', hex_output=True)
         
-        # vlans = []
+        lldp_loc_port_dict = get_snmp_data(oid.general.lldp_loc_port, 'INDEX-DESC')
+        lldp_rem_name_dict = get_snmp_data(oid.general.lldp_rem_name, 'PREINDEX-DESC')      
+        lldp_rem_name_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_name_dict) 
+        lldp_rem_port_dict = get_snmp_data(oid.general.lldp_rem_port, 'PREINDEX-DESC')      
+        lldp_rem_port_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_port_dict) 
+        lldp_rem_mac_dict = get_snmp_data(oid.general.lldp_rem_mac, 'PREINDEX-MAC', hex_output=True)
+        lldp_rem_mac_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_mac_dict)
+
         for interface in interfaces:
             interface.name = int_name_dict[interface.index]
             interface.mtu = mtu_dict[interface.index]
@@ -332,15 +328,8 @@ class SNMPDevice:
             if interface.name[0].lower() == 'p':
                 interface.type = 'lag'
 
-            # if interface.untagged:
-            #     if interface.untagged not in vlans:
-            #         vlans += [interface.untagged]
-            # if interface.tagged:
-            #     for vid in interface.tagged:
-            #         if vid not in vlans:
-            #             vlans += [vid]
             interface.print_attributes('Interface:')
-        return interfaces #, sorted(vlans, key=int)
+        return interfaces
 
 # Вендорозависимые методы интерфейсов
 # ========================================================================
