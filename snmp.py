@@ -55,9 +55,19 @@ class SNMPDevice:
                 model_type, models_line = line.split(':')
                 cls.models.update({model_type: list(filter(None, models_line.rstrip().split(',')))})
     
-    def __init__(self, ip_address, community_string):
+    @classmethod
+    def get_arp_table(cls, ip_address, community_string='public'):
+        print(f'Getting ARP table for {ip_address}')
+        snmp_session = cls(ip_address, community_string)
+        macs = snmp_session.snmpwalk(oid.general.arp_mac, 'IP-MAC', ip_address=ip_address, community_string=community_string)
+        print(f'Got {len(macs)} MACs')
+        
+        return cls.__indexes_to_dict(macs)
+    
+    def __init__(self, ip_address, community_string, arp_table=None):
         self.community_string = community_string
         self.ip_address = ip_address
+        self.arp_table = arp_table
 
         self.model_families = {
             "cisco_catalyst": self.find_interfaces_cisco_catalyst,
@@ -68,7 +78,7 @@ class SNMPDevice:
             # "ubiquiti": self.find_interfaces_ubiquiti,
         }
     
-    def snmpwalk(self, oid, typeSNMP='', hex=False, custom_option=None, timeout_process=None):
+    def snmpwalk(self, oid, typeSNMP='', hex=False, community_string=None, ip_address=None, custom_option=None, timeout_process=None):
         out = []
         # Список OID-ов, которым можно возвращать пустой список
         permissible_oids = ["1.3.6.1.2.1.1.1.0",
@@ -76,19 +86,24 @@ class SNMPDevice:
                             "1.0.8802.1.1.2.1.4.1.1.9",
                             ]
         
+        # Use self.community_string if community_string is not provided
+        community_string = community_string or self.community_string
+        # Use self.ip_address if ip_address is not provided
+        ip_address = ip_address or self.ip_address
+
         try:
-            process = ["snmpwalk", "-Pe", "-v", "2c", "-c", self.community_string, f"-On{'x' if hex else ''}",
-                       *([custom_option] if custom_option else []), self.ip_address, *([oid] if oid else [])]
+            process = ["snmpwalk", "-Pe", "-v", "2c", "-c", community_string, f"-On{'x' if hex else ''}",
+                       *([custom_option] if custom_option else []), ip_address, *([oid] if oid else [])]
 
             result = subprocess.run(process, capture_output=True, text=True, timeout=timeout_process, check=True)
 
             # Обработка ошибок
             if result.returncode != 0:
-                raise NonCriticalError(f'Fail SNMP (oid {oid})! Return code: {result.returncode}', self.ip_address)
+                raise NonCriticalError(f'Fail SNMP (oid {oid})! Return code: {result.returncode}', ip_address)
             elif 'No Such Object' in result.stdout:
-                raise NonCriticalError(f'No Such Object available on this agent at this OID ({oid})', self.ip_address)
+                raise NonCriticalError(f'No Such Object available on this agent at this OID ({oid})', ip_address)
             elif 'No Such Instance currently exists' in result.stdout:
-                raise NonCriticalError(f'No Such Instance currently exists at this OID ({oid})', self.ip_address)
+                raise NonCriticalError(f'No Such Instance currently exists at this OID ({oid})', ip_address)
     
             # Словарь паттернов парсинга
             regex_actions = {
@@ -119,6 +134,10 @@ class SNMPDevice:
                 'PREINDEX-MAC': RegexAction(
                     r'.(\d+).\d+ = [\w\-]+: (([0-9A-Fa-f]{2} ?){6})',
                     lambda re_out: [re_out.group(1), re_out.group(2).strip().upper()]
+                ),
+                'IP-MAC': RegexAction(
+                    r'.(\d+.\d+.\d+.\d+) = [\w\-]+: (([0-9A-Fa-f]{2} ?){6})',
+                    lambda re_out: [re_out.group(1), re_out.group(2).strip().replace(" ", ':').upper()]
                 ),
                 'INDEX-DESC': RegexAction(
                     r'.(\d+) = [\w\-]*:? ?"([^"]*)"',
@@ -167,7 +186,7 @@ class SNMPDevice:
                         out += [output]
             
             if len(out) == 0 and oid not in permissible_oids:
-                raise Error(f'{oid} вернул пустой список', self.ip_address)
+                raise Error(f'{oid} вернул пустой список', ip_address)
 
             return out
         
@@ -185,7 +204,7 @@ class SNMPDevice:
                     if not lineSNMP:
                         continue
                     out += [lineSNMP]
-            raise Error(f'Timeout Expired: {str(timeErr)}', self.ip_address)
+            raise Error(f'Timeout Expired: {str(timeErr)}', ip_address)
         
         except NonCriticalError:
             return out

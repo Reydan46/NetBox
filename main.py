@@ -10,26 +10,32 @@ from snmp import SNMPDevice
 # ========================================================================
 #                                  Классы
 # ========================================================================
+class Site:
+    def __init__(self, site_slug, prefix, gw=None):
+        self.site_slug = site_slug
+        self.ip_range = ipaddress.ip_network(prefix, strict=False)
+        self.gw = gw
 
 class NetworkDevice:
     vlans = {}
-    sites_dict = {} # Class attribute to store the shared sites dictionary
+    __sites = []
 
-    # Class method to initialize the sites_dict from prefixes.csv
     @classmethod
-    def initialize_sites_dict(cls):
+    def initialize_sites(cls):
         with open('prefixes.csv') as f:
             reader = csv.DictReader(f, delimiter=';')
             for row in reader:
-                site_slug = row['site']
-                ip_range = row['prefix']
-                cls.sites_dict[site_slug] = ipaddress.ip_network(
-                    ip_range, strict=False)
-
+                site = Site(row['site'], row['prefix'], row.get('gw', None))
+                if site.gw:
+                    site.arp_table = SNMPDevice.get_arp_table(site.gw)
+                cls.__sites.append(site)
+            print('-' * 40)
+    
     def __init__(self, ip_address, role, community_string):
         self.ip_address: str = ip_address
         self.community_string: str = community_string
         self.role: str = role
+        self.arp_table = None
 
     # Временный для дебага - потом удалить
     def print_attributes(self):
@@ -39,20 +45,36 @@ class NetworkDevice:
             print(f"{attribute}: {value}")
         # Затем аттрибуты класса
         for attribute, value in vars(self.__class__).items():
-            if not attribute.startswith('__') and not callable(value):
+            if not attribute.startswith('_') and not callable(value):
                 print(f"{attribute}: {value}")
         print('=' * 80)
 
     # Find and set the site_slug attribute based on the IP address
     def find_site_slug(self):
         # Check if the NetworkDevice IP address is in one of the IP ranges
-        for site_slug, ip_range in self.sites_dict.items():
-            if ipaddress.ip_address(self.ip_address) in ip_range:
-                self.site_slug = site_slug
+        for site in NetworkDevice.__sites:
+            if ipaddress.ip_address(self.ip_address) in site.ip_range:
+                self.site_slug = site.site_slug
                 break
         else:
             # Raise an error if the site is not found for the given IP address
             raise Error(f"Site not found for IP address {self.ip_address}", self.ip_address)
+    
+    def find_arp_table(self):
+        # Find the site object that matches the current device's site_slug
+        site = next((s for s in NetworkDevice.__sites if s.site_slug == self.site_slug), None)
+        if not site:
+            return
+        
+        try:
+            # If the site object has an ARP table, set the device's ARP table to the site's ARP table
+            if hasattr(site, 'arp_table'):
+                self.arp_table = site.arp_table
+            # If the site object doesn't have an ARP table, raise a non-critical error
+            else:
+                raise NonCriticalError(f"No ARP table for site {site.site_slug}", self.ip_address)
+        except NonCriticalError:
+            pass
     
     def get_role_from_hostname(self):
         role_out = re.search(r'-([p]?sw)\d+', self.hostname)
@@ -110,7 +132,9 @@ devices_reader, act = csv_reader()
 
 # ГЛАВНЫЙ ЦИКЛ
 # ========================================================================
-NetworkDevice.initialize_sites_dict() # Получаем словарь сайтов из prefixes.csv
+NetworkDevice.initialize_sites() # Получаем словарь сайтов из prefixes.csv
+SNMPDevice.load_models('models.list') # загружаем словарь моделей по семействам
+
 for csv_device in devices_reader:
     switch_network_device = None
     try:
@@ -127,13 +151,14 @@ for csv_device in devices_reader:
         )
         # Получаем имя сайта по айпи опрашиваемого устройства
         switch_network_device.find_site_slug()
+        switch_network_device.find_arp_table()
 
         # БЛОК РАБОТЫ С МОДУЛЕМ SNMP
         # создаем экземпляр класса SNMPDevice для взаимодействия с модулем SNMP
-        SNMPDevice.load_models('models.list') # загружаем словарь моделей по семействам
         snmp_device = SNMPDevice(
             switch_network_device.ip_address,
-            switch_network_device.community_string
+            switch_network_device.community_string,
+            switch_network_device.arp_table,
         )
         switch_network_device.hostname = snmp_device.get_hostname()  # получаем hostname
         # если device.csv не содержит значения role для устройства, то определяем role по hostname
@@ -146,7 +171,6 @@ for csv_device in devices_reader:
         switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces() # получаем список физических интерфейсов
         switch_network_device.get_vlans() # получаем список вланов
     except Error as e:
-        error_messages[csv_device['ip device'].strip()] = str(e)
         continue
     finally:
         if switch_network_device is not None:
