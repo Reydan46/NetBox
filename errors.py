@@ -11,5 +11,7 @@ class Error(Exception):
         cls.error_messages.append({ip: message})
 
 class NonCriticalError(Error):
-    def __init__(self, message, ip=None):
+    def __init__(self, message, ip=None, calling_function=None):
+        if calling_function is not None:
+            message = f"{calling_function} failed: {message}"
         super().__init__(message, ip)

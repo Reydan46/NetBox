@@ -1,9 +1,3 @@
-# import re
-# import subprocess
-# import logging
-# from netaddr import IPAddress
-# import traceback
-# from collections import defaultdict
 import re
 import subprocess
 from collections import defaultdict
@@ -95,7 +89,7 @@ class SNMPDevice:
             process = ["snmpwalk", "-Pe", "-v", "2c", "-c", community_string, f"-On{'x' if hex else ''}",
                        *([custom_option] if custom_option else []), ip_address, *([oid] if oid else [])]
 
-            result = subprocess.run(process, capture_output=True, text=True, timeout=timeout_process, check=True)
+            result = subprocess.run(process, capture_output=True, text=True, timeout=timeout_process)
 
             # Обработка ошибок
             if result.returncode != 0:
@@ -189,14 +183,6 @@ class SNMPDevice:
                 raise Error(f'{oid} вернул пустой список', ip_address)
 
             return out
-        
-        # except subprocess.CalledProcessError as e:
-        #     if 'No Such Object' in e.stdout:
-        #         raise Error(f'No Such Object available on this agent at this OID ({oid})')
-        #     elif 'No Such Instance currently exists' in e.stdout:
-        #         raise Error(f'No Such Instance currently exists at this OID ({oid})')
-        #     else:
-        #         raise Error(f'Fail SNMP (oid {oid})! Return code: {e.returncode}')
 
         except subprocess.TimeoutExpired as timeErr:
             if len(timeErr.stdout) > 0:
@@ -496,87 +482,3 @@ class SNMPDevice:
             mode = 'tagged-all'
         return Interface(index=index, untagged=untagged, mode=mode, tagged=tagged)
 # ========================================================================
-
-# # Виртуальный IP интерфейс
-# class SVI:
-#     def __init__(self, ip_address, mask, index, description, MTU, MAC):
-#         self.index = index
-#         self.ip_address = ip_address
-#         self.mask = mask
-#         self.ip_with_prefix = f'{self.ip_address}/{IPAddress(self.mask).netmask_bits()}'
-#         self.description = description
-#         self.MTU = MTU
-#         self.MAC = MAC
-
-#     def __repr__(self):
-#         return f'{self.index} - {self.ip_with_prefix} ({self.MAC}) - {self.description} - {self.MTU}'
-
-
-# # Физический интерфейс
-# class Interface:
-#     def __init__(self, index, untagged=None, tagged=None, name=None, mode=None, mtu=None, mac=None, desc=None):
-#         self.index = index
-#         self.untagged = None
-#         if untagged:
-#             self.untagged = untagged
-#         self.tagged = None
-#         if tagged:
-#             self.tagged = tagged
-#         self.name = ''
-#         if name:
-#             self.name = name
-#         self.mode = 'access'  # set mode to 'access' by default
-#         if mode:
-#             self.mode = mode
-#         self.mtu = 1500
-#         if mtu:
-#             self.mtu = mtu
-#         self.mac = ''
-#         if mac:
-#             self.mac = mac
-#         self.desc = ''
-#         if desc:
-#             self.desc = desc
-#         self.type = "other"
-#         self.object_interface_netbox = None
-
-#     def __repr__(self):
-#         tagged = f" Tagged: " + ','.join(self.tagged) if self.tagged else ""
-#         return f'{self.name} {self.index} ({self.mode}){f" Untagged: {self.untagged}" if self.untagged else ""}{tagged}'
-
-#     def find_interfaces_cisco_catalyst(self):
-#         """
-#         This function finds the interfaces in a Cisco Catalyst device and returns them in a list.
-#         It does this by using SNMP to walk through the OID tree of the device and extract the relevant information.
-#         The function returns a list of Interface objects.
-#         """
-#         interfaces = []
-
-#         mode_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.mode_port, 'INDEX-INT')
-#         native_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.native_port, 'INDEX-INT')
-#         untag_port_dict = self.__get_snmp_dict(oid.cisco_catalyst.untag_port, 'INDEX-INT')
-#         tag_port_dict = self.__get_tag_dict_by_port(oid.cisco_catalyst.hex_tag_port)
-#         tag_noneg_port_dict = self.__get_tag_dict_by_port(oid.cisco_catalyst.hex_tag_noneg_port)
-
-#         for index, value in mode_port_dict.items():
-#             if value == oid.cisco_catalyst.mode_port_state["access"]:
-#                 interfaces.append(self.__create_interface_access(index, untag_port_dict))
-#             elif value == oid.cisco_catalyst.mode_port_state["tagged"]:
-#                 interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_port_dict))
-#             elif value == oid.cisco_catalyst.mode_port_state["tagged-noneg"]:
-#                 interfaces.append(self.__create_interface_tagged(index, native_port_dict, tag_noneg_port_dict))
-
-#         return interfaces
-
-#     def find_interfaces_huawei(self):
-#         return []
-
-#     def find_interfaces_zyxel(self):
-#         return []
-
-#     def find_interfaces_ubiquiti(self):
-#         return []
-
-
-# if __name__ == "__main__":
-#     print(snmpwalk('1.3.6.1.2.1.1.5.0', 'public', '10.10.3.13', 'DotSplit'))

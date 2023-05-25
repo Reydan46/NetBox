@@ -5,7 +5,9 @@ import re
 from prettytable import PrettyTable
 
 from errors import Error, NonCriticalError
+from netbox import NetboxDevice
 from snmp import SNMPDevice
+
 
 # ========================================================================
 #                                  Классы
@@ -17,19 +19,26 @@ class Site:
         self.gw = gw
 
 class NetworkDevice:
-    vlans = {}
+    # Инициализация списка сайтов
+    # =====================================================================
     __sites = []
-
     @classmethod
     def initialize_sites(cls):
         with open('prefixes.csv') as f:
             reader = csv.DictReader(f, delimiter=';')
             for row in reader:
                 site = Site(row['site'], row['prefix'], row.get('gw', None))
-                if site.gw:
-                    site.arp_table = SNMPDevice.get_arp_table(site.gw)
+                cls.__populate_site_data(site)  # Заполнение экземпляра сайта данными
                 cls.__sites.append(site)
             print('-' * 40)
+
+    @classmethod
+    def __populate_site_data(cls, site):
+        for site in cls.__sites:
+            if site.gw:
+                site.arp_table = SNMPDevice.get_arp_table(site.gw)
+            site.netbox_vlans = NetboxDevice.get_vlans(site.site_slug)
+    # ====================================================================
     
     def __init__(self, ip_address, role, community_string):
         self.ip_address: str = ip_address
@@ -60,21 +69,33 @@ class NetworkDevice:
             # Raise an error if the site is not found for the given IP address
             raise Error(f"Site not found for IP address {self.ip_address}", self.ip_address)
     
-    def find_arp_table(self):
-        # Find the site object that matches the current device's site_slug
+    # Получение аттрибутов сайта для устройства
+    # =====================================================================
+    def __get_site_attribute(self, attribute):
         site = next((s for s in NetworkDevice.__sites if s.site_slug == self.site_slug), None)
         if not site:
-            return
-        
+            return None
+
         try:
-            # If the site object has an ARP table, set the device's ARP table to the site's ARP table
-            if hasattr(site, 'arp_table'):
-                self.arp_table = site.arp_table
-            # If the site object doesn't have an ARP table, raise a non-critical error
+            if hasattr(site, attribute):
+                return getattr(site, attribute)
             else:
-                raise NonCriticalError(f"No ARP table for site {site.site_slug}", self.ip_address)
+                raise NonCriticalError(f"No {attribute} for site {site.site_slug}", self.ip_address)
         except NonCriticalError:
             pass
+
+        return None
+
+    def find_arp_table(self):
+        arp_table = self.__get_site_attribute('arp_table')
+        if arp_table is not None:
+            self.arp_table = arp_table
+
+    def find_netbox_vlans(self):
+        netbox_vlans = self.__get_site_attribute('netbox_vlans')
+        if netbox_vlans is not None:
+            self.netbox_vlans = netbox_vlans
+    # =====================================================================
     
     def get_role_from_hostname(self):
         role_out = re.search(r'-([p]?sw)\d+', self.hostname)
@@ -87,19 +108,15 @@ class NetworkDevice:
         else:
             raise Error("Could not determine role from hostname")
     
-    def get_vlans(self):
-        local_vlans = set()
-        for interface in self.physical_interfaces:
-            untagged_vid, tagged_vids = interface.untagged, interface.tagged
-            if untagged_vid:
-                local_vlans.add(untagged_vid)
-            if tagged_vids:
-                local_vlans.update(tagged_vids)
-
-        if self.site_slug in self.__class__.vlans:
-            self.__class__.vlans[self.site_slug].update(local_vlans)
-        else:
-            self.__class__.vlans[self.site_slug] = local_vlans
+    def check_vlans(self):
+        # Добавление в список нетеггированных VLAN
+        local_vlans = {interface.untagged for interface in self.physical_interfaces if interface.untagged}
+        # Добавление в список тэггированных VLAN
+        local_vlans.update({vlan for interface in self.physical_interfaces for vlan in interface.tagged})
+        # Проверка наличия вланов в netbox
+        missing_vlans = [vlan for vlan in local_vlans if vlan not in self.netbox_vlans]
+        if missing_vlans:
+            NonCriticalError(f"Missing VLANs: {missing_vlans}", self.ip_address)
 
 # ========================================================================
 #                                 Функции
@@ -132,6 +149,7 @@ devices_reader, act = csv_reader()
 
 # ГЛАВНЫЙ ЦИКЛ
 # ========================================================================
+NetboxDevice.create_connection()
 NetworkDevice.initialize_sites() # Получаем словарь сайтов из prefixes.csv
 SNMPDevice.load_models('models.list') # загружаем словарь моделей по семействам
 
@@ -149,9 +167,9 @@ for csv_device in devices_reader:
             role=csv_device['role'],
             community_string=csv_device['community'] if csv_device['community'] else 'public',
         )
-        # Получаем имя сайта по айпи опрашиваемого устройства
-        switch_network_device.find_site_slug()
-        switch_network_device.find_arp_table()
+        switch_network_device.find_site_slug()  # Получаем имя сайта по айпи опрашиваемого устройства
+        switch_network_device.find_arp_table()  # Получаем ARP-таблицу по сайту
+        switch_network_device.find_netbox_vlans()  # Получаем список netbox вланов для устройства
 
         # БЛОК РАБОТЫ С МОДУЛЕМ SNMP
         # создаем экземпляр класса SNMPDevice для взаимодействия с модулем SNMP
@@ -169,7 +187,12 @@ for csv_device in devices_reader:
         switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces() # получаем список виртуальных интерфейсов
         switch_network_device.model_family = snmp_device.find_model_family() # получаем семейство моделей
         switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces() # получаем список физических интерфейсов
-        switch_network_device.get_vlans() # получаем список вланов
+        switch_network_device.check_vlans() # проверяем наличие вланов устройства в netbox
+        
+        # БЛОК РАБОТЫ С МОДУЛЕМ NETBOX
+        # создаем экземпляр класса NetBoxDevice для взаимодействия с модулем NetBox
+        
+        
     except Error as e:
         continue
     finally:
