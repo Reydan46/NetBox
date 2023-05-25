@@ -180,7 +180,7 @@ class SNMPDevice:
                         out += [output]
             
             if len(out) == 0 and oid not in permissible_oids:
-                raise Error(f'{oid} вернул пустой список', ip_address)
+                raise Error(f'{oid} вернул пустой список')
 
             return out
 
@@ -190,7 +190,7 @@ class SNMPDevice:
                     if not lineSNMP:
                         continue
                     out += [lineSNMP]
-            raise Error(f'Timeout Expired: {str(timeErr)}', ip_address)
+            raise Error(f'Timeout Expired: {str(timeErr)}')
         
         except NonCriticalError:
             return out
@@ -222,7 +222,7 @@ class SNMPDevice:
                 return self.model
 
         # Ни по одному oid модель не получена
-        raise Error("Model is undefined", self.ip_address)
+        raise Error("Model is undefined")
 
     def get_serial_number(self):
         value = self.snmpwalk(oid.general.serial_number)
@@ -262,7 +262,7 @@ class SNMPDevice:
                 self.model_family = model_family
                 return self.model_family
 
-        raise Error(f"{self.model} не найдена в models.list", self.ip_address)
+        raise Error(f"{self.model} не найдена в models.list")
 
 #   БЛОК ПОЛУЧЕНИЯ ИНТЕРФЕЙСОВ
 # ========================================================================
@@ -300,7 +300,7 @@ class SNMPDevice:
         
         interfaces = get_interfaces_func()
         if not interfaces:
-            raise Error(f"get_interfaces_func() вернула пустой список интерфейсов", self.ip_address)
+            raise Error(f"get_interfaces_func() вернула пустой список интерфейсов")
 
         int_name_dict = get_snmp_data(oid.general.si_int_name, 'INDEX-DESC')
         mtu_dict = get_snmp_data(oid.general.si_mtu, 'INDEX-INT')

@@ -3,9 +3,10 @@ import os
 import traceback
 
 import pynetbox
-from colorama import Fore, init
+from colorama import init
 
-from errors import NonCriticalError
+from color_printer import print_red, print_yellow
+from errors import Error, NonCriticalError
 
 # Initialize Colorama
 init()
@@ -24,11 +25,6 @@ class NetboxDevice:
     __netbox_url = __get_env_variable("NETBOX_URL")
     __netbox_token = __get_env_variable("NETBOX_TOKEN")
     # ====================================================================
-    
-    # Пресет колорамы
-    @staticmethod
-    def __print_yellow(message):
-        print(Fore.YELLOW + message + Fore.RESET)
 
     # Создание netbox соединения
     @classmethod
@@ -48,12 +44,68 @@ class NetboxDevice:
     def get_vlans(cls, site_slug):
         try:
             vlans = cls.__netbox_connection.ipam.vlans.filter(site=site_slug)
-            vlan_ids = [str(vlan.vid) for vlan in vlans]    # Extract VLAN IDs from the objects
+            # Extract VLAN IDs from the objects
+            vlan_ids = [str(vlan.vid) for vlan in vlans]
             print(f"Found {len(vlan_ids)} VLANs for site {site_slug}")
             return vlan_ids
         except pynetbox.core.query.RequestError as e:
             error_message = f"Request failed for site {site_slug}"
-            cls.__print_yellow(f"NonCriticalError: {error_message}")
+            print_yellow(f"NonCriticalError: {error_message}")
             calling_function = inspect.stack()[1].function
             NonCriticalError(error_message, site_slug, calling_function)
             return None
+
+    # Создаем экземпляр устройства netbox
+    def __init__(self, site_slug, model, role, hostname=None, serial_number=None) -> None:
+        self.__hostname = hostname
+        self.__site_slug = site_slug
+        self.__netbox_device = self.__netbox_connection.dcim.devices.get(
+            name=self.__hostname, site=self.__site_slug)
+        self.__model = model
+        self.__role = role
+        self.__serial_number = serial_number
+
+        # Check if the device already exists in NetBox
+        if not self.__netbox_device:
+            self.__create_device()
+        else:
+            self.__check_serial_number()
+
+    def __check_serial_number(self):
+        if self.__serial_number and self.__netbox_device.serial != self.__serial_number:
+            error_msg = f"Serial number of the device {self.__hostname} ({self.__serial_number}) does not match the serial number of the device in NetBox ({self.__netbox_device.serial})."
+            print_red(f"CriticalError: {error_msg}")
+            raise Error(error_msg)
+
+    def __create_device(self):
+        def critical_error_not_found(item_type, item_value):
+            error_msg = f"{item_type} {item_value} not found in NetBox."
+            print_red(f"CriticalError: {error_msg}")
+            raise Error(error_msg)
+
+        print("Creating device...")
+
+        self.__netbox_device_type = self.__netbox_connection.dcim.device_types.get(
+            model=self.__model)
+        if not self.__netbox_device_type:
+            critical_error_not_found("device type", self.__model)
+
+        self.__netbox_site = self.__netbox_connection.dcim.sites.get(
+            slug=self.__site_slug)
+        if not self.__netbox_site:
+            critical_error_not_found("site", self.__site_slug)
+
+        self.__netbox_device_role = self.__netbox_connection.dcim.device_roles.get(
+            name=self.__role)
+        if not self.__netbox_device_role:
+            critical_error_not_found("device role", self.__role)
+
+        self.__netbox_device = self.__netbox_connection.dcim.devices.create(
+            name=self.__hostname,
+            device_type=self.__netbox_device_type.id,
+            serial=self.__serial_number,
+            site=self.__netbox_site.id,
+            device_role=self.__netbox_device_role.id,
+            status="active",
+        )
+        print("Device created...")

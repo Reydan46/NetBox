@@ -34,10 +34,9 @@ class NetworkDevice:
 
     @classmethod
     def __populate_site_data(cls, site):
-        for site in cls.__sites:
-            if site.gw:
-                site.arp_table = SNMPDevice.get_arp_table(site.gw)
-            site.netbox_vlans = NetboxDevice.get_vlans(site.site_slug)
+        if site.gw:
+            site.arp_table = SNMPDevice.get_arp_table(site.gw)
+        site.netbox_vlans = NetboxDevice.get_vlans(site.site_slug)
     # ====================================================================
     
     def __init__(self, ip_address, role, community_string):
@@ -106,17 +105,23 @@ class NetworkDevice:
         if role_out:
             self.role = role_mapping.get(role_out.group(1))
         else:
-            raise Error("Could not determine role from hostname")
+            raise Error("Could not determine role from hostname", self.ip_address)
     
+    # Проверка наличия вланов устройства в netbox
+    # =====================================================================
+    @staticmethod
+    def __get_all_vlans(physical_interfaces):
+        untagged_vlans = {interface.untagged for interface in physical_interfaces if interface.untagged is not None}
+        tagged_vlans = {vlan for interface in physical_interfaces if interface.tagged is not None for vlan in interface.tagged}
+        return untagged_vlans | tagged_vlans
+
     def check_vlans(self):
-        # Добавление в список нетеггированных VLAN
-        local_vlans = {interface.untagged for interface in self.physical_interfaces if interface.untagged}
-        # Добавление в список тэггированных VLAN
-        local_vlans.update({vlan for interface in self.physical_interfaces for vlan in interface.tagged})
-        # Проверка наличия вланов в netbox
-        missing_vlans = [vlan for vlan in local_vlans if vlan not in self.netbox_vlans]
+        all_vlans = self.__get_all_vlans(self.physical_interfaces)
+        missing_vlans = [vlan for vlan in all_vlans if vlan not in self.netbox_vlans]
+        
         if missing_vlans:
             NonCriticalError(f"Missing VLANs: {missing_vlans}", self.ip_address)
+    # =====================================================================
 
 # ========================================================================
 #                                 Функции
@@ -191,13 +196,20 @@ for csv_device in devices_reader:
         
         # БЛОК РАБОТЫ С МОДУЛЕМ NETBOX
         # создаем экземпляр класса NetBoxDevice для взаимодействия с модулем NetBox
-        
+        switch_netbox_device = NetboxDevice(
+            hostname=switch_network_device.hostname,
+            site_slug=switch_network_device.site_slug,
+            serial_number=switch_network_device.serial_number,
+            model=switch_network_device.model,
+            role=switch_network_device.role,
+        )
         
     except Error as e:
+        Error(e, csv_device['ip device'].strip())
         continue
     finally:
         if switch_network_device is not None:
-            switch_network_device.print_attributes()
+            # switch_network_device.print_attributes()
             input('Нажмите Enter для продолжения...')
 
 # ВЫВОД ОШИБОК
