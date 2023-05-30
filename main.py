@@ -36,7 +36,8 @@ class NetworkDevice:
     def __populate_site_data(cls, site):
         if site.gw:
             site.arp_table = SNMPDevice.get_arp_table(site.gw)
-        site.netbox_vlans = NetboxDevice.get_vlans(site.site_slug)
+        site.netbox_vlans_objs = NetboxDevice.get_vlans(site.site_slug)
+    
     # ====================================================================
     
     def __init__(self, ip_address, role, community_string):
@@ -85,15 +86,10 @@ class NetworkDevice:
 
         return None
 
-    def find_arp_table(self):
-        arp_table = self.__get_site_attribute('arp_table')
-        if arp_table is not None:
-            self.arp_table = arp_table
-
-    def find_netbox_vlans(self):
-        netbox_vlans = self.__get_site_attribute('netbox_vlans')
-        if netbox_vlans is not None:
-            self.netbox_vlans = netbox_vlans
+    def find_attribute(self, attribute):
+        value = self.__get_site_attribute(attribute)
+        if value is not None:
+            setattr(self, attribute, value)
     # =====================================================================
     
     def get_role_from_hostname(self):
@@ -117,7 +113,8 @@ class NetworkDevice:
 
     def check_vlans(self):
         all_vlans = self.__get_all_vlans(self.physical_interfaces)
-        missing_vlans = [vlan for vlan in all_vlans if vlan not in self.netbox_vlans]
+        netbox_vids = [str(vlan.vid) for vlan in self.netbox_vlans_objs]
+        missing_vlans = [vlan for vlan in all_vlans if vlan not in netbox_vids]
         
         if missing_vlans:
             NonCriticalError(f"Missing VLANs: {missing_vlans}", self.ip_address)
@@ -173,8 +170,8 @@ for csv_device in devices_reader:
             community_string=csv_device['community'] if csv_device['community'] else 'public',
         )
         switch_network_device.find_site_slug()  # Получаем имя сайта по айпи опрашиваемого устройства
-        switch_network_device.find_arp_table()  # Получаем ARP-таблицу по сайту
-        switch_network_device.find_netbox_vlans()  # Получаем список netbox вланов для устройства
+        switch_network_device.find_attribute('arp_table')  # Получаем ARP-таблицу по сайту
+        switch_network_device.find_attribute('netbox_vlans_objs')  # Получаем список netbox-объектов вланов для устройства
 
         # БЛОК РАБОТЫ С МОДУЛЕМ SNMP
         # создаем экземпляр класса SNMPDevice для взаимодействия с модулем SNMP
@@ -202,7 +199,12 @@ for csv_device in devices_reader:
             serial_number=switch_network_device.serial_number,
             model=switch_network_device.model,
             role=switch_network_device.role,
+            vlans=switch_network_device.netbox_vlans_objs,
         )
+        for interface in switch_network_device.virtual_interfaces:
+            switch_netbox_device.add_interface(interface)
+        for interface in switch_network_device.physical_interfaces:
+            switch_netbox_device.add_interface(interface)
         
     except Error as e:
         Error(e, csv_device['ip device'].strip())

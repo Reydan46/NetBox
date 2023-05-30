@@ -17,7 +17,7 @@ class RegexAction:
         self.action = action
 
 class Interface:
-    def __init__(self, index, ip_address=None, mask=None, name=None, MTU=None, MAC=None, mode=None, untagged=None, tagged=None):
+    def __init__(self, index, ip_address=None, mask=None, name=None, MTU=None, MAC=None, mode=None, untagged=None, tagged=None, type='other'):
         self.ip_address = ip_address
         self.mask = mask
         self.index = index
@@ -25,6 +25,7 @@ class Interface:
         self.mtu = MTU
         self.mac = MAC
         self.mode = mode
+        self.type = type
         self.untagged = untagged
         self.tagged = tagged
         
@@ -250,7 +251,8 @@ class SNMPDevice:
                 index=index,
                 name=name[0],
                 MTU=MTU[0],
-                MAC=MAC[0]
+                MAC=MAC[0],
+                type='virtual',
             )]
 
             SVIs[-1].print_attributes('SVI:')

@@ -43,11 +43,12 @@ class NetboxDevice:
     @classmethod
     def get_vlans(cls, site_slug):
         try:
-            vlans = cls.__netbox_connection.ipam.vlans.filter(site=site_slug)
+            vlans = list(
+                cls.__netbox_connection.ipam.vlans.filter(site=site_slug))
             # Extract VLAN IDs from the objects
             vlan_ids = [str(vlan.vid) for vlan in vlans]
             print(f"Found {len(vlan_ids)} VLANs for site {site_slug}")
-            return vlan_ids
+            return vlans
         except pynetbox.core.query.RequestError as e:
             error_message = f"Request failed for site {site_slug}"
             print_yellow(f"NonCriticalError: {error_message}")
@@ -56,7 +57,7 @@ class NetboxDevice:
             return None
 
     # Создаем экземпляр устройства netbox
-    def __init__(self, site_slug, model, role, hostname=None, serial_number=None) -> None:
+    def __init__(self, site_slug, model, role, hostname=None, serial_number=None, vlans=None) -> None:
         self.__hostname = hostname
         self.__site_slug = site_slug
         self.__netbox_device = self.__netbox_connection.dcim.devices.get(
@@ -64,6 +65,7 @@ class NetboxDevice:
         self.__model = model
         self.__role = role
         self.__serial_number = serial_number
+        self.__vlans = vlans
 
         # Check if the device already exists in NetBox
         if not self.__netbox_device:
@@ -109,3 +111,50 @@ class NetboxDevice:
             status="active",
         )
         print("Device created...")
+
+    def add_interface(self, interface):
+        # Поиск влан-объекта netbox по vlan id
+        def __find_vlan_object(vlan_id):
+            for vlan in self.__vlans:
+                if str(vlan.vid) == vlan_id:
+                    return vlan
+
+        # Helper function to update the fields of the Netbox interface object.
+        def __update_interface_fields(netbox_interface, interface_object):
+            netbox_interface.name = interface_object.name
+            netbox_interface.mtu = getattr(interface_object, 'mtu', None)
+            netbox_interface.mac_address = getattr(interface_object, 'mac', '')
+            netbox_interface.description = getattr(
+                interface_object, 'desc', '')
+            netbox_interface.mode = getattr(interface_object, 'mode', '')
+            if interface_object.type != "other":
+                netbox_interface.type = interface_object.type
+            netbox_interface.untagged_vlan = __find_vlan_object(
+                interface_object.untagged)
+            if interface_object.tagged:
+                netbox_interface.tagged_vlans = [__find_vlan_object(
+                    vlan_id) for vlan_id in interface_object.tagged]
+            netbox_interface.save()
+
+        # Проверка существует ли интерфейс в netbox
+        print(f"Checking that interface {interface.name} already exists...")
+        existing_interface = self.__netbox_connection.dcim.interfaces.get(
+            name=interface.name, device=self.__netbox_device.name)
+
+        # Если сущестует - обновляем
+        if existing_interface:
+            print(f"Interface {interface.name} already exists...")
+            print("Updating interface...")
+            self.__netbox_interface = existing_interface
+            __update_interface_fields(self.__netbox_interface, interface)
+            print("Interface updated...")
+            return
+
+        # Если не существует - создаем и обновляем
+        print("Creating interface...")
+        self.__netbox_interface = self.__netbox_connection.dcim.interfaces.create(
+            name=interface.name,
+            device=self.__netbox_device.id,
+            type=getattr(interface, 'type', 'other'),
+        )
+        __update_interface_fields(self.__netbox_interface, interface)
