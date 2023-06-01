@@ -60,19 +60,24 @@ class NetboxDevice:
     def __init__(self, site_slug, model, role, hostname=None, serial_number=None, vlans=None) -> None:
         self.__hostname = hostname
         self.__site_slug = site_slug
-        self.__netbox_device = self.__netbox_connection.dcim.devices.get(
-            name=self.__hostname, site=self.__site_slug)
         self.__model = model
         self.__role = role
         self.__serial_number = serial_number
         self.__vlans = vlans
+        self.__netbox_device = self.__get_netbox_device() 
 
-        # Check if the device already exists in NetBox
+        # Выбор действия в зависимости от наличия или отсутствия устройства в NetBox
         if not self.__netbox_device:
             self.__create_device()
         else:
             self.__check_serial_number()
 
+    def __get_netbox_device(self):
+        device = self.__netbox_connection.dcim.devices.get(name=self.__hostname, site=self.__site_slug)
+        if not device:
+            device = self.__netbox_connection.dcim.virtual_chassis.get(name=self.__hostname, site=self.__site_slug)
+        return device
+    
     def __check_serial_number(self):
         if self.__serial_number and self.__netbox_device.serial != self.__serial_number:
             error_msg = f"Serial number of the device {self.__hostname} ({self.__serial_number}) does not match the serial number of the device in NetBox ({self.__netbox_device.serial})."
@@ -85,31 +90,32 @@ class NetboxDevice:
             print_red(f"CriticalError: {error_msg}")
             raise Error(error_msg)
 
+        def get_netbox_object(object_type, field, value):
+            netbox_object = self.__netbox_connection.dcim.__getattribute__(object_type).get(field, value)
+            if not netbox_object:
+                critical_error_not_found(object_type, value)
+            return netbox_object
+
         print("Creating device...")
 
-        self.__netbox_device_type = self.__netbox_connection.dcim.device_types.get(
-            model=self.__model)
-        if not self.__netbox_device_type:
-            critical_error_not_found("device type", self.__model)
+        # Получаем объекты netbox
+        self.__netbox_device_type = get_netbox_object("device_types", "model", self.__model)
+        self.__netbox_site = get_netbox_object("sites", "slug", self.__site_slug)
+        self.__netbox_device_role = get_netbox_object("device_roles", "name", self.__role)
 
-        self.__netbox_site = self.__netbox_connection.dcim.sites.get(
-            slug=self.__site_slug)
-        if not self.__netbox_site:
-            critical_error_not_found("site", self.__site_slug)
-
-        self.__netbox_device_role = self.__netbox_connection.dcim.device_roles.get(
-            name=self.__role)
-        if not self.__netbox_device_role:
-            critical_error_not_found("device role", self.__role)
-
+        # Создаем устройство в NetBox
         self.__netbox_device = self.__netbox_connection.dcim.devices.create(
             name=self.__hostname,
             device_type=self.__netbox_device_type.id,
-            serial=self.__serial_number,
             site=self.__netbox_site.id,
             device_role=self.__netbox_device_role.id,
             status="active",
         )
+        # Костыль на случай отсутствия серийного номера
+        if self.__serial_number:
+            self.__netbox_device.serial = self.__serial_number
+            self.__netbox_device.save()
+        
         print("Device created...")
 
     def add_interface(self, interface):

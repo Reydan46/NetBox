@@ -269,17 +269,15 @@ class SNMPDevice:
 #   БЛОК ПОЛУЧЕНИЯ ИНТЕРФЕЙСОВ
 # ========================================================================
     def get_physical_interfaces(self):
+        # Helper functions
+        # ========================================================================
         def get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_data_dict):
             """
             Get LLDP data by index from dictionaries of interface names and LLDP data.
             """
             lldp_data_by_index = {}
             for int_index, int_name in int_name_dict.items():
-                lldp_index = None
-                for idx, name in lldp_loc_port_dict.items():
-                    if name.startswith(int_name):
-                        lldp_index = idx
-                        break
+                lldp_index = next((idx for idx, name in lldp_loc_port_dict.items() if name.startswith(int_name)), None)
                 if lldp_index:
                     lldp_data = lldp_data_dict.get(lldp_index)
                     if lldp_data:
@@ -287,19 +285,24 @@ class SNMPDevice:
             return lldp_data_by_index
 
         def get_snmp_data(oid, data_type, hex_output=False):
+            """
+            Get SNMP data using specified OIDs, data type, and optional hex_output.
+            """
             output = self.snmpwalk(oid, typeSNMP=data_type, hex=hex_output)
             return self.__indexes_to_dict(output)
 
-        def hex2string(hex):
-            if hex:
-                return "".join([chr(int(x, 16)) for x in hex.split()]).encode('latin1').decode('utf-8')
-            return ""
+        def hex2string(hex_value):
+            """
+            Convert hex value to string, handling encoding properly.
+            """
+            return "".join([chr(int(x, 16)) for x in hex_value.split()]).encode('latin1').decode('utf-8') if hex_value else ""
 
-        try:
-            get_interfaces_func = self.model_families[self.model_family]
-        except KeyError:
+        # Main logic
+        # ========================================================================
+        get_interfaces_func = self.model_families.get(self.model_family)
+        if not get_interfaces_func:
             raise Error(f'Для семейства "{self.model_family}" не назначена get_interfaces_func()', self.ip_address)
-        
+
         interfaces = get_interfaces_func()
         if not interfaces:
             raise Error(f"get_interfaces_func() вернула пустой список интерфейсов")
@@ -308,9 +311,9 @@ class SNMPDevice:
         mtu_dict = get_snmp_data(oid.general.si_mtu, 'INDEX-INT')
         mac_dict = get_snmp_data(oid.general.si_mac, 'INDEX-MAC', hex_output=True)
         desc_dict = get_snmp_data(oid.general.si_description, 'INDEX-DESC-HEX', hex_output=True)
-        
         lldp_loc_port_dict = get_snmp_data(oid.general.lldp_loc_port, 'INDEX-DESC')
         lldp_rem_name_dict = get_snmp_data(oid.general.lldp_rem_name, 'PREINDEX-DESC')      
+        
         lldp_rem_name_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_name_dict) 
         lldp_rem_port_dict = get_snmp_data(oid.general.lldp_rem_port, 'PREINDEX-DESC')      
         lldp_rem_port_by_index = get_lldp_data_by_index(int_name_dict, lldp_loc_port_dict, lldp_rem_port_dict) 
@@ -322,10 +325,12 @@ class SNMPDevice:
             interface.mtu = mtu_dict[interface.index]
             interface.mac = mac_dict[interface.index]
             interface.desc = hex2string(desc_dict[interface.index])
-            # Не у всех интерфейсов есть lldp data
+            
             lldp_rem_name = lldp_rem_name_by_index.get(interface.index)
             lldp_rem_mac = lldp_rem_mac_by_index.get(interface.index,'').replace(" ", ':').upper()
             lldp_rem_port = lldp_rem_port_by_index.get(interface.index)
+            interface.rem_ip = next((key for key, value in self.arp_table.items() if value == lldp_rem_mac), None)
+            
             interface.lldp_rem = {
                 "name": lldp_rem_name,
                 "mac": lldp_rem_mac,

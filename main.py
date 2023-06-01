@@ -201,11 +201,27 @@ for csv_device in devices_reader:
             role=switch_network_device.role,
             vlans=switch_network_device.netbox_vlans_objs,
         )
+        # создаем/обновляем интерфейсы в netbox
         for interface in switch_network_device.virtual_interfaces:
             switch_netbox_device.add_interface(interface)
         for interface in switch_network_device.physical_interfaces:
             switch_netbox_device.add_interface(interface)
         
+        # БЛОК РАБОТЫ С КОНЕЧНЫМИ УСТРОЙСТВАМИ
+        # проходим по списку физических интерфейсов свича
+        for interface in switch_network_device.physical_interfaces:
+            # Чекаем свойства интерфейса и принимаем решение о создании экземпляра для хоста
+            hostname = interface.lldp_rem['name'] or interface.rem_ip
+            if hostname is None:
+                continue
+
+            host_netbox_device = NetboxDevice(
+                hostname=hostname,
+                model='unknown',
+                site_slug=switch_network_device.site_slug,
+                role='Host',
+            )
+            
     except Error as e:
         Error(e, csv_device['ip device'].strip())
         continue
