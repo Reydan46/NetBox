@@ -8,6 +8,7 @@ import oid.cisco_catalyst
 import oid.cisco_sg
 import oid.general
 from errors import Error, NonCriticalError
+from log import logger
 
 
 # Класс для группировки регулярного выражения и формата его выводимого результата
@@ -35,10 +36,10 @@ class Interface:
 
     # Временный для дебага - потом удалить
     def print_attributes(self, title=''):
-        print(title)
+        logger.debug(title)
         for attribute, value in self.__dict__.items():
-            print(f"{attribute}: {value}")
-        print('-' * 40)
+            logger.debug(f"{attribute}: {value}")
+        logger.debug('-' * 40)
 
 class SNMPDevice:
     models = {} # Dictionary for storing device's models
@@ -52,10 +53,10 @@ class SNMPDevice:
     
     @classmethod
     def get_arp_table(cls, ip_address, community_string='public'):
-        print(f'Getting ARP table for {ip_address}')
+        logger.debug(f'Getting ARP table for {ip_address}')
         snmp_session = cls(ip_address, community_string)
         macs = snmp_session.snmpwalk(oid.general.arp_mac, 'IP-MAC', hex=True, ip_address=ip_address, community_string=community_string)
-        print(f'Got {len(macs)} MACs')
+        logger.debug(f'Got {len(macs)} MACs')
         
         return cls.__indexes_to_dict(macs)
     

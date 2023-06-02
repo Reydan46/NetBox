@@ -6,6 +6,7 @@ import pynetbox
 from colorama import init
 
 from errors import Error, NonCriticalError
+from log import logger
 
 # Initialize Colorama
 init()
@@ -33,7 +34,7 @@ class NetboxDevice:
                 url=cls.__netbox_url,
                 token=cls.__netbox_token
             )
-            print("Connection to NetBox established")
+            logger.debug("Connection to NetBox established")
         except Exception as e:
             traceback.print_exc()
             raise e
@@ -46,7 +47,7 @@ class NetboxDevice:
                 cls.__netbox_connection.ipam.vlans.filter(site=site_slug))
             # Extract VLAN IDs from the objects
             vlan_ids = [str(vlan.vid) for vlan in vlans]
-            print(f"Found {len(vlan_ids)} VLANs for site {site_slug}")
+            logger.debug(f"Found {len(vlan_ids)} VLANs for site {site_slug}")
             return vlans
         except pynetbox.core.query.RequestError as e:
             error_message = f"Request failed for site {site_slug}"
@@ -62,7 +63,7 @@ class NetboxDevice:
         self.__role = role
         self.__serial_number = serial_number
         self.__vlans = vlans
-        self.__netbox_device = self.__get_netbox_device() 
+        self.__netbox_device = self.__get_netbox_device()
         self.__ip_address = ip_address
 
         # Выбор действия в зависимости от наличия или отсутствия устройства в NetBox
@@ -72,11 +73,13 @@ class NetboxDevice:
             self.__check_serial_number()
 
     def __get_netbox_device(self):
-        device = self.__netbox_connection.dcim.devices.get(name=self.__hostname, site=self.__site_slug)
+        device = self.__netbox_connection.dcim.devices.get(
+            name=self.__hostname, site=self.__site_slug)
         if not device:
-            device = self.__netbox_connection.dcim.virtual_chassis.get(name=self.__hostname, site=self.__site_slug)
+            device = self.__netbox_connection.dcim.virtual_chassis.get(
+                name=self.__hostname, site=self.__site_slug)
         return device
-    
+
     def __check_serial_number(self):
         if self.__serial_number and self.__netbox_device.serial != self.__serial_number:
             error_msg = f"Serial number of the device {self.__hostname} ({self.__serial_number}) does not match the serial number of the device in NetBox ({self.__netbox_device.serial})."
@@ -87,23 +90,23 @@ class NetboxDevice:
             error_msg = f"{item_type} {item_value} not found in NetBox."
             raise Error(error_msg)
 
-        print("Creating device...")
+        logger.debug("Creating device...")
 
         self.__netbox_device_type = self.__netbox_connection.dcim.device_types.get(
             model=self.__model)
         if not self.__netbox_device_type:
             critical_error_not_found("device type", self.__model)
-        
+
         self.__netbox_site = self.__netbox_connection.dcim.sites.get(
             slug=self.__site_slug)
         if not self.__netbox_site:
             critical_error_not_found("site", self.__site_slug)
-        
+
         self.__netbox_device_role = self.__netbox_connection.dcim.device_roles.get(
             name=self.__role)
         if not self.__netbox_device_role:
             critical_error_not_found("device role", self.__role)
-        
+
         # Создаем устройство в NetBox
         self.__netbox_device = self.__netbox_connection.dcim.devices.create(
             name=self.__hostname,
@@ -116,8 +119,8 @@ class NetboxDevice:
         if self.__serial_number:
             self.__netbox_device.serial = self.__serial_number
             self.__netbox_device.save()
-        
-        print("Device created")
+
+        logger.debug("Device created")
 
     def add_interface(self, interface):
         # Поиск netbox-объекта влана по VLAN ID
@@ -129,50 +132,55 @@ class NetboxDevice:
         def update_interface_fields(netbox_interface, interface_object):
             update_fields = ['name', 'mtu', 'mac', 'desc', 'mode']
             for field in update_fields:
-                setattr(netbox_interface, field, getattr(interface_object, field, ''))
+                setattr(netbox_interface, field, getattr(
+                    interface_object, field, ''))
 
             netbox_interface.type = interface_object.type if interface_object.type != "other" else "other"
-            netbox_interface.untagged_vlan = find_vlan_object(interface_object.untagged)
-            netbox_interface.tagged_vlans = [find_vlan_object(vlan_id) for vlan_id in interface_object.tagged or []]
+            netbox_interface.untagged_vlan = find_vlan_object(
+                interface_object.untagged)
+            netbox_interface.tagged_vlans = [find_vlan_object(
+                vlan_id) for vlan_id in interface_object.tagged or []]
             netbox_interface.save()
-        
+
         # Проверка существования интерфейса в NetBox
-        print(f"Checking if interface {interface.name} already exists in NetBox...")
+        logger.debug(
+            f"Checking if interface {interface.name} already exists in NetBox...")
         existing_interface = self.__netbox_connection.dcim.interfaces.get(
             name=interface.name, device=self.__netbox_device.name
         )
-        
+
         if existing_interface:
-            print(f"Interface {interface.name} already exists")
+            logger.debug(f"Interface {interface.name} already exists")
             self.__netbox_interface = existing_interface
         else:
-            print(f"Creating interface {interface.name}...")
+            logger.debug(f"Creating interface {interface.name}...")
             self.__netbox_interface = self.__netbox_connection.dcim.interfaces.create(
                 name=interface.name,
                 device=self.__netbox_device.id,
                 type=getattr(interface, 'type', 'other'),
             )
         update_interface_fields(self.__netbox_interface, interface)
-        
+
         # Проверка наличия у интерфейса IP-адреса
         if hasattr(interface, 'ip_with_prefix'):
-            print(f"Interface {interface.name} has IP address")
+            logger.debug(f"Interface {interface.name} has IP address")
             self.__create_ip_address(interface)
 
     def __create_ip_address(self, interface):
         # Проверка существования IP-адреса в NetBox
-        print(f"Checking if IP address {interface.ip_with_prefix} already exists in NetBox...")
+        logger.debug(
+            f"Checking if IP address {interface.ip_with_prefix} already exists in NetBox...")
         existing_ip = self.__netbox_connection.ipam.ip_addresses.get(
             address=interface.ip_with_prefix
         )
 
         if existing_ip:
-            print(f"IP address {interface.ip_with_prefix} already exists")
+            logger.debug(f"IP address {interface.ip_with_prefix} already exists")
             existing_ip.assigned_object_type = "dcim.interface"
             existing_ip.assigned_object_id = self.__netbox_interface.id
             existing_ip.save()
         else:
-            print(f"Creating IP address {interface.ip_with_prefix}...")
+            logger.debug(f"Creating IP address {interface.ip_with_prefix}...")
             existing_ip = self.__netbox_connection.ipam.ip_addresses.create(
                 address=interface.ip_with_prefix,
                 status="active",
@@ -183,6 +191,7 @@ class NetboxDevice:
         # Проверка необходимости назначения IP-адреса основным
         if interface.ip_address == self.__ip_address:
             if str(self.__netbox_device.primary_ip4) != interface.ip_with_prefix:
-                print(f"Setting {interface.ip_address} as primary IP address")
-                self.__netbox_device.primary_ip4 = {'address': interface.ip_with_prefix}
+                logger.debug(f"Setting {interface.ip_address} as primary IP address")
+                self.__netbox_device.primary_ip4 = {
+                    'address': interface.ip_with_prefix}
                 self.__netbox_device.save()

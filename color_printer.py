@@ -1,8 +1,9 @@
 from colorama import Fore
+from log import logger
 
 # Пресеты колорамы
 def print_yellow(message):
-    print(Fore.YELLOW + message + Fore.RESET)
+    logger.error(Fore.YELLOW + message + Fore.RESET)
 
 def print_red(message):
-    print(Fore.RED + message + Fore.RESET)
+    logger.warning(Fore.RED + message + Fore.RESET)

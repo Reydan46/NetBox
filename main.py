@@ -5,6 +5,7 @@ import re
 from prettytable import PrettyTable
 
 from errors import Error, NonCriticalError
+from log import logger
 from netbox import NetboxDevice
 from snmp import SNMPDevice
 
@@ -30,7 +31,7 @@ class NetworkDevice:
                 site = Site(row['site'], row['prefix'], row.get('gw', None))
                 cls.__populate_site_data(site)  # Заполнение экземпляра сайта данными
                 cls.sites.append(site)
-            print('-' * 40)
+            logger.info('-' * 40)
 
     @classmethod
     def __populate_site_data(cls, site):
@@ -258,5 +259,5 @@ if merged_error_messages:
     table.valign["Error"] = "t"
     for ip, error_message in merged_error_messages.items():
         table.add_row([ip, error_message])
-    print(table)
+    logger.info(f'The work is completed.\n{table}')
 
