@@ -95,7 +95,7 @@ class SNMPDevice:
 
             # Обработка ошибок
             if result.returncode != 0:
-                raise NonCriticalError(f'Fail SNMP (oid {input_oid})! Return code: {result.returncode}', ip_address)
+                raise Error(f'Fail SNMP (oid {input_oid})! Return code: {result.returncode}', ip_address)
             elif 'No Such Object' in result.stdout:
                 raise NonCriticalError(f'No Such Object available on this agent at this OID ({input_oid})', ip_address)
             elif 'No Such Instance currently exists' in result.stdout:
