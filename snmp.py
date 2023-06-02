@@ -74,12 +74,12 @@ class SNMPDevice:
             # "ubiquiti": self.find_interfaces_ubiquiti,
         }
     
-    def snmpwalk(self, oid, typeSNMP='', hex=False, community_string=None, ip_address=None, custom_option=None, timeout_process=None):
+    def snmpwalk(self, input_oid, typeSNMP='', hex=False, community_string=None, ip_address=None, custom_option=None, timeout_process=None):
         out = []
         # Список OID-ов, которым можно возвращать пустой список
-        permissible_oids = ["1.3.6.1.2.1.1.1.0",
-                            "1.0.8802.1.1.2.1.4.1.1.7",
-                            "1.0.8802.1.1.2.1.4.1.1.9",
+        permissible_oids = [oid.general.model,
+                            oid.general.lldp_rem_port,
+                            oid.general.lldp_rem_name,
                             ]
         
         # Use self.community_string if community_string is not provided
@@ -89,17 +89,17 @@ class SNMPDevice:
 
         try:
             process = ["snmpwalk", "-Pe", "-v", "2c", "-c", community_string, f"-On{'x' if hex else ''}",
-                       *([custom_option] if custom_option else []), ip_address, *([oid] if oid else [])]
+                       *([custom_option] if custom_option else []), ip_address, *([input_oid] if input_oid else [])]
 
             result = subprocess.run(process, capture_output=True, text=True, timeout=timeout_process)
 
             # Обработка ошибок
             if result.returncode != 0:
-                raise NonCriticalError(f'Fail SNMP (oid {oid})! Return code: {result.returncode}', ip_address)
+                raise NonCriticalError(f'Fail SNMP (oid {input_oid})! Return code: {result.returncode}', ip_address)
             elif 'No Such Object' in result.stdout:
-                raise NonCriticalError(f'No Such Object available on this agent at this OID ({oid})', ip_address)
+                raise NonCriticalError(f'No Such Object available on this agent at this OID ({input_oid})', ip_address)
             elif 'No Such Instance currently exists' in result.stdout:
-                raise NonCriticalError(f'No Such Instance currently exists at this OID ({oid})', ip_address)
+                raise NonCriticalError(f'No Such Instance currently exists at this OID ({input_oid})', ip_address)
     
             # Словарь паттернов парсинга
             regex_actions = {
@@ -181,8 +181,8 @@ class SNMPDevice:
                         # Собираем результаты в список out
                         out += [output]
             
-            if len(out) == 0 and oid not in permissible_oids:
-                raise Error(f'{oid} вернул пустой список')
+            if len(out) == 0 and input_oid not in permissible_oids:
+                raise Error(f'{input_oid} вернул пустой список')
 
             return out
 
