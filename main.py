@@ -21,7 +21,7 @@ class Site:
 class NetworkDevice:
     # Инициализация списка сайтов
     # =====================================================================
-    __sites = []
+    sites = []
     @classmethod
     def initialize_sites(cls):
         with open('prefixes.csv') as f:
@@ -29,7 +29,7 @@ class NetworkDevice:
             for row in reader:
                 site = Site(row['site'], row['prefix'], row.get('gw', None))
                 cls.__populate_site_data(site)  # Заполнение экземпляра сайта данными
-                cls.__sites.append(site)
+                cls.sites.append(site)
             print('-' * 40)
 
     @classmethod
@@ -61,7 +61,7 @@ class NetworkDevice:
     # Find and set the site_slug attribute based on the IP address
     def find_site_slug(self):
         # Check if the NetworkDevice IP address is in one of the IP ranges
-        for site in NetworkDevice.__sites:
+        for site in NetworkDevice.sites:
             if ipaddress.ip_address(self.ip_address) in site.ip_range:
                 self.site_slug = site.site_slug
                 break
@@ -72,7 +72,7 @@ class NetworkDevice:
     # Получение аттрибутов сайта для устройства
     # =====================================================================
     def __get_site_attribute(self, attribute):
-        site = next((s for s in NetworkDevice.__sites if s.site_slug == self.site_slug), None)
+        site = next((s for s in NetworkDevice.sites if s.site_slug == self.site_slug), None)
         if not site:
             return None
 
@@ -200,6 +200,7 @@ for csv_device in devices_reader:
             model=switch_network_device.model,
             role=switch_network_device.role,
             vlans=switch_network_device.netbox_vlans_objs,
+            ip_address=switch_network_device.ip_address,
         )
         # создаем/обновляем интерфейсы в netbox
         for interface in switch_network_device.virtual_interfaces:
@@ -211,17 +212,27 @@ for csv_device in devices_reader:
         # проходим по списку физических интерфейсов свича
         for interface in switch_network_device.physical_interfaces:
             # Чекаем свойства интерфейса и принимаем решение о создании экземпляра для хоста
-            hostname = interface.lldp_rem['name'] or interface.rem_ip
-            if hostname is None:
+            ip_address = getattr(interface, 'rem_ip', None)
+            if not ip_address:
+                continue
+            
+            # Не создавать хосты для ip из диапазона свичей
+            is_ip_in_site_range = any(
+                ipaddress.ip_address(ip_address) in site.ip_range
+                for site in switch_network_device.sites
+            )
+            if is_ip_in_site_range:
                 continue
 
             host_netbox_device = NetboxDevice(
-                hostname=hostname,
+                hostname=ip_address,
                 model='unknown',
                 site_slug=switch_network_device.site_slug,
                 role='Host',
+                ip_address=ip_address,
+                serial_number=interface.lldp_rem['name'],
             )
-            
+    
     except Error as e:
         Error(e, csv_device['ip device'].strip())
         continue

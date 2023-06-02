@@ -54,7 +54,7 @@ class SNMPDevice:
     def get_arp_table(cls, ip_address, community_string='public'):
         print(f'Getting ARP table for {ip_address}')
         snmp_session = cls(ip_address, community_string)
-        macs = snmp_session.snmpwalk(oid.general.arp_mac, 'IP-MAC', ip_address=ip_address, community_string=community_string)
+        macs = snmp_session.snmpwalk(oid.general.arp_mac, 'IP-MAC', hex=True, ip_address=ip_address, community_string=community_string)
         print(f'Got {len(macs)} MACs')
         
         return cls.__indexes_to_dict(macs)
@@ -139,7 +139,7 @@ class SNMPDevice:
                     lambda re_out: [re_out.group(1), re_out.group(2)]
                 ),
                 'PREINDEX-DESC': RegexAction(
-                    r'.(\d+).\d+ = [\w\-]*:? ?"([^"]*?)(?:\.[^"]*)?"\n',
+                    r'.(\d+).\d+ = [\w\-]*:? ?"([A-Za-z0-9\/\-_]*)(?:\.[^"]*)?"',
                     lambda re_out: [re_out.group(1), re_out.group(2)]
                 ),
                 'INDEX-HEX': RegexAction(
@@ -289,7 +289,8 @@ class SNMPDevice:
             Get SNMP data using specified OIDs, data type, and optional hex_output.
             """
             output = self.snmpwalk(oid, typeSNMP=data_type, hex=hex_output)
-            return self.__indexes_to_dict(output)
+            cleaned_output = ([index, value] for index, value in output if value != '')
+            return self.__indexes_to_dict(cleaned_output)
 
         def hex2string(hex_value):
             """
@@ -324,12 +325,13 @@ class SNMPDevice:
             interface.name = int_name_dict[interface.index]
             interface.mtu = mtu_dict[interface.index]
             interface.mac = mac_dict[interface.index]
-            interface.desc = hex2string(desc_dict[interface.index])
+            interface.desc = hex2string(desc_dict.get(interface.index))
             
             lldp_rem_name = lldp_rem_name_by_index.get(interface.index)
             lldp_rem_mac = lldp_rem_mac_by_index.get(interface.index,'').replace(" ", ':').upper()
             lldp_rem_port = lldp_rem_port_by_index.get(interface.index)
-            interface.rem_ip = next((key for key, value in self.arp_table.items() if value == lldp_rem_mac), None)
+            if self.arp_table:
+                interface.rem_ip = next((key for key, value in self.arp_table.items() if value == lldp_rem_mac), None)
             
             interface.lldp_rem = {
                 "name": lldp_rem_name,
