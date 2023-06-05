@@ -138,8 +138,8 @@ class NetboxDevice:
             netbox_interface.type = interface_object.type if interface_object.type != "other" else "other"
             netbox_interface.untagged_vlan = find_vlan_object(
                 interface_object.untagged)
-            netbox_interface.tagged_vlans = [find_vlan_object(
-                vlan_id) for vlan_id in interface_object.tagged or []]
+            netbox_interface.tagged_vlans = [vlan_obj for vlan_id in interface_object.tagged or [
+            ] if (vlan_obj := find_vlan_object(vlan_id)) is not None]
             netbox_interface.save()
 
         # Проверка существования интерфейса в NetBox
@@ -175,7 +175,8 @@ class NetboxDevice:
         )
 
         if existing_ip:
-            logger.debug(f"IP address {interface.ip_with_prefix} already exists")
+            logger.debug(
+                f"IP address {interface.ip_with_prefix} already exists")
             existing_ip.assigned_object_type = "dcim.interface"
             existing_ip.assigned_object_id = self.__netbox_interface.id
             existing_ip.save()
@@ -191,7 +192,8 @@ class NetboxDevice:
         # Проверка необходимости назначения IP-адреса основным
         if interface.ip_address == self.__ip_address:
             if str(self.__netbox_device.primary_ip4) != interface.ip_with_prefix:
-                logger.debug(f"Setting {interface.ip_address} as primary IP address")
+                logger.debug(
+                    f"Setting {interface.ip_address} as primary IP address")
                 self.__netbox_device.primary_ip4 = {
                     'address': interface.ip_with_prefix}
                 self.__netbox_device.save()
