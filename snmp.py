@@ -474,7 +474,7 @@ class SNMPDevice:
         """
         return Interface(
             index=index,
-            untagged=untag_port_dict[index] if index in untag_port_dict and untag_port_dict[index] != '1' else None,
+            untagged = untag_port_dict[index] if index in untag_port_dict and untag_port_dict[index] not in ('0', '1') else None,
             mode='access',
         )
 
