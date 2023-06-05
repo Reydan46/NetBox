@@ -121,6 +121,13 @@ class NetworkDevice:
             NonCriticalError(f"Missing VLANs: {missing_vlans}", self.ip_address)
     # =====================================================================
 
+class HostInterface:
+    def __init__(self, name, untagged):
+        self.name = name
+        self.type = 'other'
+        self.untagged = untagged
+        self.tagged = []
+
 # ========================================================================
 #                                 Функции
 # ========================================================================
@@ -224,7 +231,8 @@ for csv_device in devices_reader:
             )
             if is_ip_in_site_range:
                 continue
-
+            
+            # Создаем хост в netbox
             host_netbox_device = NetboxDevice(
                 hostname=ip_address,
                 model='unknown',
@@ -232,7 +240,14 @@ for csv_device in devices_reader:
                 role='Host',
                 ip_address=ip_address,
                 serial_number=interface.lldp_rem['name'],
+                vlans=switch_network_device.netbox_vlans_objs,
             )
+            # Создаем экземпляр интерфейса хоста
+            host_interface = HostInterface(
+                name = interface.lldp_rem['port'] or 'interface',
+                untagged=interface.untagged,
+            )
+            host_netbox_device.add_interface(host_interface)
     
     except Error as e:
         Error(e, csv_device['ip device'].strip())

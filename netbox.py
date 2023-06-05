@@ -56,7 +56,7 @@ class NetboxDevice:
             return None
 
     # Создаем экземпляр устройства netbox
-    def __init__(self, site_slug, model, role, ip_address, hostname=None, serial_number=None, vlans=None) -> None:
+    def __init__(self, site_slug, model, role, ip_address, vlans, hostname=None, serial_number=None) -> None:
         self.__hostname = hostname
         self.__site_slug = site_slug
         self.__model = model
@@ -132,10 +132,9 @@ class NetboxDevice:
         def update_interface_fields(netbox_interface, interface_object):
             update_fields = ['name', 'mtu', 'mac', 'desc', 'mode']
             for field in update_fields:
-                setattr(netbox_interface, field, getattr(
-                    interface_object, field, ''))
-
-            netbox_interface.type = interface_object.type if interface_object.type != "other" else "other"
+                if hasattr(interface_object, field):
+                    setattr(netbox_interface, field, getattr(interface_object, field))
+            
             netbox_interface.untagged_vlan = find_vlan_object(
                 interface_object.untagged)
             netbox_interface.tagged_vlans = [vlan_obj for vlan_id in interface_object.tagged or [
