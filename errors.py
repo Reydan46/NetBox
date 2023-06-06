@@ -1,5 +1,6 @@
 from color_printer import print_red, print_yellow
 
+
 class Error(Exception):
     error_messages = []
 
@@ -13,6 +14,7 @@ class Error(Exception):
     @classmethod
     def store_error(cls, ip, message):
         cls.error_messages.append({ip: message})
+
 
 class NonCriticalError(Error):
     def __init__(self, message, ip=None, calling_function=None):

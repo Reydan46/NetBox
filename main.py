@@ -19,10 +19,12 @@ class Site:
         self.ip_range = ipaddress.ip_network(prefix, strict=False)
         self.gw = gw
 
+
 class NetworkDevice:
     # Инициализация списка сайтов
     # =====================================================================
     sites = []
+
     @classmethod
     def initialize_sites(cls):
         with open('prefixes.csv') as f:
@@ -38,9 +40,9 @@ class NetworkDevice:
         if site.gw:
             site.arp_table = SNMPDevice.get_arp_table(site.gw)
         site.netbox_vlans_objs = NetboxDevice.get_vlans(site.site_slug)
-    
+
     # ====================================================================
-    
+
     def __init__(self, ip_address, role, community_string):
         self.ip_address: str = ip_address
         self.community_string: str = community_string
@@ -69,7 +71,7 @@ class NetworkDevice:
         else:
             # Raise an error if the site is not found for the given IP address
             raise Error(f"Site not found for IP address {self.ip_address}", self.ip_address)
-    
+
     # Получение аттрибутов сайта для устройства
     # =====================================================================
     def __get_site_attribute(self, attribute):
@@ -91,8 +93,9 @@ class NetworkDevice:
         value = self.__get_site_attribute(attribute)
         if value is not None:
             setattr(self, attribute, value)
+
     # =====================================================================
-    
+
     def get_role_from_hostname(self):
         role_out = re.search(r'-([p]?sw)\d+', self.hostname)
         role_mapping = {
@@ -103,23 +106,25 @@ class NetworkDevice:
             self.role = role_mapping.get(role_out.group(1))
         else:
             raise Error("Could not determine role from hostname", self.ip_address)
-    
+
     # Проверка наличия вланов устройства в netbox
     # =====================================================================
     @staticmethod
     def __get_all_vlans(physical_interfaces):
         untagged_vlans = {interface.untagged for interface in physical_interfaces if interface.untagged is not None}
-        tagged_vlans = {vlan for interface in physical_interfaces if interface.tagged is not None for vlan in interface.tagged}
+        tagged_vlans = {vlan for interface in physical_interfaces if interface.tagged is not None for vlan in
+                        interface.tagged}
         return untagged_vlans | tagged_vlans
 
     def check_vlans(self):
         all_vlans = self.__get_all_vlans(self.physical_interfaces)
         netbox_vids = [str(vlan.vid) for vlan in self.netbox_vlans_objs]
         missing_vlans = [vlan for vlan in all_vlans if vlan not in netbox_vids]
-        
+
         if missing_vlans:
             NonCriticalError(f"Missing VLANs: {missing_vlans}", self.ip_address)
     # =====================================================================
+
 
 class HostInterface:
     def __init__(self, name, untagged):
@@ -127,6 +132,7 @@ class HostInterface:
         self.type = 'other'
         self.untagged = untagged
         self.tagged = []
+
 
 # ========================================================================
 #                                 Функции
@@ -151,6 +157,7 @@ def csv_reader():
     devices_reader.__init__(devices_file, delimiter=";")
     return devices_reader, act
 
+
 # ========================================================================
 #                               Тело скрипта
 # ========================================================================
@@ -160,8 +167,8 @@ devices_reader, act = csv_reader()
 # ГЛАВНЫЙ ЦИКЛ
 # ========================================================================
 NetboxDevice.create_connection()
-NetworkDevice.initialize_sites() # Получаем словарь сайтов из prefixes.csv
-SNMPDevice.load_models('models.list') # загружаем словарь моделей по семействам
+NetworkDevice.initialize_sites()  # Получаем словарь сайтов из prefixes.csv
+SNMPDevice.load_models('models.list')  # загружаем словарь моделей по семействам
 
 for csv_device in devices_reader:
     switch_network_device = None
@@ -181,7 +188,8 @@ for csv_device in devices_reader:
         )
         switch_network_device.find_site_slug()  # Получаем имя сайта по айпи опрашиваемого устройства
         switch_network_device.find_attribute('arp_table')  # Получаем ARP-таблицу по сайту
-        switch_network_device.find_attribute('netbox_vlans_objs')  # Получаем список netbox-объектов вланов для устройства
+        switch_network_device.find_attribute(
+            'netbox_vlans_objs')  # Получаем список netbox-объектов вланов для устройства
 
         # БЛОК РАБОТЫ С МОДУЛЕМ SNMP
         # создаем экземпляр класса SNMPDevice для взаимодействия с модулем SNMP
@@ -194,13 +202,13 @@ for csv_device in devices_reader:
         # если device.csv не содержит значения role для устройства, то определяем role по hostname
         if not switch_network_device.role:
             switch_network_device.get_role_from_hostname()
-        switch_network_device.model = snmp_device.get_model() # получаем модель
-        switch_network_device.serial_number = snmp_device.get_serial_number() # получаем серийный номер
-        switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces() # получаем список виртуальных интерфейсов
-        switch_network_device.model_family = snmp_device.find_model_family() # получаем семейство моделей
-        switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces() # получаем список физических интерфейсов
-        switch_network_device.check_vlans() # проверяем наличие вланов устройства в netbox
-        
+        switch_network_device.model = snmp_device.get_model()  # получаем модель
+        switch_network_device.serial_number = snmp_device.get_serial_number()  # получаем серийный номер
+        switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces()  # получаем список виртуальных интерфейсов
+        switch_network_device.model_family = snmp_device.find_model_family()  # получаем семейство моделей
+        switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces()  # получаем список физических интерфейсов
+        switch_network_device.check_vlans()  # проверяем наличие вланов устройства в netbox
+
         # БЛОК РАБОТЫ С МОДУЛЕМ NETBOX
         # создаем экземпляр класса NetBoxDevice для взаимодействия с модулем NetBox
         switch_netbox_device = NetboxDevice(
@@ -217,7 +225,7 @@ for csv_device in devices_reader:
             switch_netbox_device.add_interface(interface)
         for interface in switch_network_device.physical_interfaces:
             switch_netbox_device.add_interface(interface)
-        
+
         # БЛОК РАБОТЫ С КОНЕЧНЫМИ УСТРОЙСТВАМИ
         # проходим по списку физических интерфейсов свича
         for interface in switch_network_device.physical_interfaces:
@@ -225,7 +233,7 @@ for csv_device in devices_reader:
             ip_address = getattr(interface, 'rem_ip', None)
             if not ip_address:
                 continue
-            
+
             # Не создавать хосты для ip из диапазона свичей
             is_ip_in_site_range = any(
                 ipaddress.ip_address(ip_address) in site.ip_range
@@ -233,7 +241,7 @@ for csv_device in devices_reader:
             )
             if is_ip_in_site_range:
                 continue
-            
+
             # Создаем хост в netbox
             host_netbox_device = NetboxDevice(
                 hostname=ip_address,
@@ -246,14 +254,15 @@ for csv_device in devices_reader:
             )
             # Создаем экземпляр интерфейса хоста
             host_interface = HostInterface(
-                name = interface.lldp_rem['port'] or 'interface',
+                name=interface.lldp_rem['port'] or 'interface',
                 untagged=interface.untagged,
             )
             host_netbox_device.add_interface(host_interface)
             host_netbox_device.connect_endpoint(switch_network_device, interface)
     
     except Error as e:
-        Error(e, csv_device['ip device'].strip())
+        e.store_error(csv_device['ip device'].strip(), e)
+        # Error(e, csv_device['ip device'].strip())
         continue
     finally:
         if switch_network_device is not None:
@@ -278,4 +287,3 @@ if merged_error_messages:
     for ip, error_message in merged_error_messages.items():
         table.add_row([ip, error_message])
     logger.info(f'The work is completed.\n{table}')
-
