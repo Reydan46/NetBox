@@ -3,14 +3,11 @@ from color_printer import print_red, print_yellow
 
 class Error(Exception):
     error_messages = []
-    print_flag = False
 
     def __init__(self, message, ip=None, is_critical=True):
         super().__init__(message)
         if is_critical:
-            if not Error.print_flag:
-                print_red(f"CriticalError: {message}")
-                Error.print_flag = True
+            print_red(f"CriticalError: {message}")
         if ip is not None:
             self.store_error(ip, message)
 
