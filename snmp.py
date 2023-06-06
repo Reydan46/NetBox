@@ -326,7 +326,7 @@ class SNMPDevice:
             interface.name = int_name_dict[interface.index]
             interface.mtu = mtu_dict[interface.index]
             interface.mac = mac_dict[interface.index]
-            interface.desc = hex2string(desc_dict.get(interface.index))
+            interface.description = hex2string(desc_dict.get(interface.index))
             
             lldp_rem_name = lldp_rem_name_by_index.get(interface.index)
             lldp_rem_mac = lldp_rem_mac_by_index.get(interface.index,'').replace(" ", ':').upper()

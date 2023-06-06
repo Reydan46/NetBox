@@ -130,11 +130,12 @@ class NetboxDevice:
                     return vlan
 
         def update_interface_fields(netbox_interface, interface_object):
-            update_fields = ['name', 'mtu', 'mac', 'desc', 'mode']
+            update_fields = ['name', 'mtu', 'mac', "description", 'mode']
             for field in update_fields:
                 if hasattr(interface_object, field):
-                    setattr(netbox_interface, field, getattr(interface_object, field))
-            
+                    setattr(netbox_interface, field,
+                            getattr(interface_object, field))
+
             netbox_interface.untagged_vlan = find_vlan_object(
                 interface_object.untagged)
             netbox_interface.tagged_vlans = [vlan_obj for vlan_id in interface_object.tagged or [
@@ -196,3 +197,47 @@ class NetboxDevice:
                 self.__netbox_device.primary_ip4 = {
                     'address': interface.ip_with_prefix}
                 self.__netbox_device.save()
+
+    def connect_endpoint(self, parent_device, interface):
+        def recreate_cable():
+            logger.debug(f'Deleting the cable...')
+            self.__netbox_interface.cable.delete()
+            create_cable()
+
+        def create_cable():
+            logger.debug(f'Creating the cable...')
+            self.__netbox_interface.cable = self.__netbox_connection.dcim.cables.create(
+                a_terminations=[{
+                    "object_id": self.__netbox_interface.id,
+                    "object_type": 'dcim.interface',
+                }],
+                b_terminations=[{
+                    "object_id": parent_interface.id,
+                    "object_type": 'dcim.interface',
+                }]
+            )
+            logger.debug(f'The cable has been created')
+        
+        # Netbox-объект интерфейса свича
+        parent_interface = self.__netbox_connection.dcim.interfaces.get(
+            name=interface.name,
+            device=parent_device.hostname,
+        )
+        logger.debug(
+            f"Checking if cable between {parent_device.hostname} and {self.__netbox_device.name} exists...")
+        # Если интерфейса хоста нет кабеля - создаем кабель между интерфейсами свича и хостом
+        if not self.__netbox_interface.cable:
+            create_cable()
+        # Если кабель существует, проверяем что он включен в соответсвующий порт свича
+        else:
+            logger.debug(f'The cable already exists')
+            if self.__netbox_interface.connected_endpoints:
+                for endpoint in self.__netbox_interface.connected_endpoints:
+                    # Если кабель включен в другой порт - удаляем, создаем новый
+                    if endpoint.id != parent_interface.id:
+                        NonCriticalError(
+                            f'Кабель включен в другой порт ({endpoint.device} {endpoint})'
+                        )
+                        recreate_cable()
+            else:
+                recreate_cable()

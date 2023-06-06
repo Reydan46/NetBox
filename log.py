@@ -18,7 +18,7 @@ c_handler.setFormatter(c_format)
 logger.addHandler(c_handler)
 
 # Configure file handler to store log messages in 'NetBox.log' with mode 'w' (overwrite)
-f_handler = logging.FileHandler('NetBox.log', mode='w')
+f_handler = logging.FileHandler('NetBox.log', mode='w', encoding='utf-8')
 f_format = logging.Formatter(
     "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
 f_handler.setFormatter(f_format)

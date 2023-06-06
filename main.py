@@ -169,8 +169,10 @@ for csv_device in devices_reader:
         # Условия для пропуска устройства
         if (act == 'exclude' and csv_device['act'] == '-') or \
                 (act == 'include' and csv_device['act'] != '+'):
+            logger.info(f"Skipping {csv_device['ip device']}")
             continue
-
+        
+        logger.info(f"Processing {csv_device['ip device']}...\n")
         # Создаем экземпляр класса NetworkDevice, который служит "буфером" для информации между модулями
         switch_network_device = NetworkDevice(
             ip_address=csv_device['ip device'].strip(),
@@ -248,6 +250,7 @@ for csv_device in devices_reader:
                 untagged=interface.untagged,
             )
             host_netbox_device.add_interface(host_interface)
+            host_netbox_device.connect_endpoint(switch_network_device, interface)
     
     except Error as e:
         Error(e, csv_device['ip device'].strip())
