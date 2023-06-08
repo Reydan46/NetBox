@@ -82,8 +82,12 @@ class NetboxDevice:
 
     def __check_serial_number(self):
         if self.__serial_number and self.__netbox_device.serial != self.__serial_number:
-            error_msg = f"Serial number of the device {self.__hostname} ({self.__serial_number}) does not match the serial number of the device in NetBox ({self.__netbox_device.serial})."
-            raise Error(error_msg)
+            # error_msg = f"Serial number of the device {self.__hostname} ({self.__serial_number}) does not match the serial number of the device in NetBox ({self.__netbox_device.serial})."
+            # raise Error(error_msg)
+            self.__netbox_device.serial = self.__serial_number
+            self.__netbox_device.save()
+            NonCriticalError(
+                f'Serial number was changed to {self.__serial_number}', self.__ip_address)
 
     def __create_device(self):
         def critical_error_not_found(item_type, item_value):
@@ -217,7 +221,7 @@ class NetboxDevice:
                 }]
             )
             logger.debug(f'The cable has been created')
-        
+
         # Netbox-объект интерфейса свича
         parent_interface = self.__netbox_connection.dcim.interfaces.get(
             name=interface.name,
