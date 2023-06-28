@@ -267,7 +267,7 @@ for csv_device in devices_reader:
     finally:
         if switch_network_device is not None:
             # switch_network_device.print_attributes()
-            input('Нажмите Enter для продолжения...')
+            print('=' * 80)
 
 # ВЫВОД ОШИБОК
 # ========================================================================

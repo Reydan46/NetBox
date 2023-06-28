@@ -5,8 +5,8 @@ import sys
 logger = logging.getLogger('NetBox')
 
 # Set logging level (uncomment the desired level)
-logger.setLevel(logging.DEBUG)
-# logger.setLevel(logging.INFO)
+# logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 # logger.setLevel(logging.WARNING)
 # logger.setLevel(logging.ERROR)
 

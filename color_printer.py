@@ -4,8 +4,8 @@ from log import logger
 
 # Пресеты колорамы
 def print_yellow(message):
-    logger.debug(f'{Fore.LIGHTYELLOW_EX}{message}{Fore.RESET}')
+    logger.warning(f'{Fore.LIGHTYELLOW_EX}{message}{Fore.RESET}')
 
 
 def print_red(message):
-    logger.debug(f'{Fore.RED}{message}{Fore.RESET}')
+    logger.error(f'{Fore.RED}{message}{Fore.RESET}')
