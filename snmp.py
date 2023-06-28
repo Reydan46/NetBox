@@ -128,7 +128,7 @@ class SNMPDevice:
                     lambda re_out: [re_out.group(1), re_out.group(2).strip().replace(" ", ':').upper()]
                 ),
                 'PREINDEX-MAC': RegexAction(
-                    r'.(\d+).\d+ = [\w\-]+: (([0-9A-Fa-f]{2} ?){6})',
+                    r'.(\d+).\d+ = [\w\-]+: (([0-9A-Fa-f]{2} ?){6}) ?$',
                     lambda re_out: [re_out.group(1), re_out.group(2).strip().upper()]
                 ),
                 'IP-MAC': RegexAction(
@@ -421,9 +421,16 @@ class SNMPDevice:
     def __indexes_to_dict(indexes):
         """
         Converts a list of tuples to a dictionary where the first item of each tuple is the key and the second item is the value.
+        If multiple tuples have the same key, the values are concatenated into a string.
         """
-        return {interface: value for interface, value in indexes}
-    
+        result_dict = {}
+        for interface, value in indexes:
+            if interface in result_dict:
+                result_dict[interface] += ", " + value
+            else:
+                result_dict[interface] = value
+        return result_dict
+
     def __get_tag_dict_by_port(self, oid):
         """
         Метод для получения порт:влан словаря, для случаев, когда список вланов храниться в HEX

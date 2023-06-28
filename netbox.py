@@ -210,17 +210,20 @@ class NetboxDevice:
 
         def create_cable():
             logger.debug(f'Creating the cable...')
-            self.__netbox_interface.cable = self.__netbox_connection.dcim.cables.create(
-                a_terminations=[{
-                    "object_id": self.__netbox_interface.id,
-                    "object_type": 'dcim.interface',
-                }],
-                b_terminations=[{
-                    "object_id": parent_interface.id,
-                    "object_type": 'dcim.interface',
-                }]
-            )
-            logger.debug(f'The cable has been created')
+            try:
+                self.__netbox_interface.cable = self.__netbox_connection.dcim.cables.create(
+                    a_terminations=[{
+                        "object_id": self.__netbox_interface.id,
+                        "object_type": 'dcim.interface',
+                    }],
+                    b_terminations=[{
+                        "object_id": parent_interface.id,
+                        "object_type": 'dcim.interface',
+                    }]
+                )
+                logger.debug(f'The cable has been created')
+            except Exception:
+                Error('Cable creation failed', self.__ip_address)
 
         # Netbox-объект интерфейса свича
         parent_interface = self.__netbox_connection.dcim.interfaces.get(
