@@ -87,7 +87,7 @@ class NetboxDevice:
             self.__netbox_device.serial = self.__serial_number
             self.__netbox_device.save()
             NonCriticalError(
-                f'Serial number was changed to {self.__serial_number}', self.__ip_address)
+                f'Serial number {self.__netbox_device.serial} was changed to {self.__serial_number}', self.__ip_address)
 
     def __create_device(self):
         def critical_error_not_found(item_type, item_value):

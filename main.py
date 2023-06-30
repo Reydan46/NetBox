@@ -210,6 +210,7 @@ for csv_device in devices_reader:
         switch_network_device.check_vlans()  # проверяем наличие вланов устройства в netbox
 
         # БЛОК РАБОТЫ С МОДУЛЕМ NETBOX
+        NetboxDevice.create_connection() # пересоздание соединения с netbox на случай, если по snmp инфа собиралась слишком долго
         # создаем экземпляр класса NetBoxDevice для взаимодействия с модулем NetBox
         switch_netbox_device = NetboxDevice(
             hostname=switch_network_device.hostname,

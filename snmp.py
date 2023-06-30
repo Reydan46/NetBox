@@ -203,11 +203,13 @@ class SNMPDevice:
             raise Error(f'Unexpected error: {str(e)}')
 
     def get_hostname(self):
+        logger.info('Getting hostname from SNMP...')
         value = self.snmpwalk(oid.general.hostname, 'DotSplit')
         self.hostname = value[0]
         return self.hostname
 
     def get_model(self):
+        logger.info('Getting model from SNMP...')
         # Пробуем получить модель по основному oid
         value = self.snmpwalk(oid.general.model)
         if value:
@@ -227,12 +229,13 @@ class SNMPDevice:
         raise Error("Model is undefined")
 
     def get_serial_number(self):
+        logger.info('Getting serial number from SNMP...')
         value = self.snmpwalk(oid.general.serial_number)
         self.serial_number = next((i for i in value if i), None)
         return self.serial_number
 
     def get_virtual_interfaces(self):
-        
+        logger.info('Getting virtual interfaces from SNMP...')
         ip_addresses = self.snmpwalk(oid.general.svi_ip_addresses, 'IP')
         masks = self.snmpwalk(oid.general.svi_masks, 'IP')
         indexes = self.snmpwalk(oid.general.svi_indexes, 'INT')
@@ -260,6 +263,7 @@ class SNMPDevice:
         return SVIs
 
     def find_model_family(self):
+        logger.info('Finding model family...')
         for model_family, models in SNMPDevice.models.items():
             if self.model in models:
                 self.model_family = model_family
@@ -301,6 +305,7 @@ class SNMPDevice:
 
         # Main logic
         # ========================================================================
+        logger.info('Getting physical interfaces...')
         get_interfaces_func = self.model_families.get(self.model_family)
         if not get_interfaces_func:
             raise Error(f'Для семейства "{self.model_family}" не назначена get_interfaces_func()', self.ip_address)
