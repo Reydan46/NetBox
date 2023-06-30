@@ -86,7 +86,7 @@ class NetboxDevice:
             # raise Error(error_msg)
             self.__netbox_device.serial = self.__serial_number
             self.__netbox_device.save()
-            NonCriticalError(
+            logger.debug(
                 f'Serial number {self.__netbox_device.serial} was changed to {self.__serial_number}', self.__ip_address)
 
     def __create_device(self):
