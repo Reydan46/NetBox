@@ -53,7 +53,7 @@ class SNMPDevice:
     
     @classmethod
     def get_arp_table(cls, ip_address, community_string='public'):
-        logger.debug(f'Getting ARP table for {ip_address}')
+        logger.info(f'Getting ARP table for {ip_address}')
         snmp_session = cls(ip_address, community_string)
         macs = snmp_session.snmpwalk(oid.general.arp_mac, 'IP-MAC', hex=True, ip_address=ip_address, community_string=community_string)
         logger.debug(f'Got {len(macs)} MACs')

@@ -34,7 +34,7 @@ class NetboxDevice:
                 url=cls.__netbox_url,
                 token=cls.__netbox_token
             )
-            logger.debug("Connection to NetBox established")
+            logger.info("Connection to NetBox established")
         except Exception as e:
             traceback.print_exc()
             raise e
@@ -147,7 +147,7 @@ class NetboxDevice:
             netbox_interface.save()
 
         # Проверка существования интерфейса в NetBox
-        logger.debug(
+        logger.info(
             f"Checking if interface {interface.name} already exists in NetBox...")
         existing_interface = self.__netbox_connection.dcim.interfaces.get(
             name=interface.name, device=self.__netbox_device.name
@@ -209,7 +209,7 @@ class NetboxDevice:
             create_cable()
 
         def create_cable():
-            logger.debug(f'Creating the cable...')
+            logger.info(f'Creating the cable...')
             try:
                 self.__netbox_interface.cable = self.__netbox_connection.dcim.cables.create(
                     a_terminations=[{
@@ -230,7 +230,7 @@ class NetboxDevice:
             name=interface.name,
             device=parent_device.hostname,
         )
-        logger.debug(
+        logger.info(
             f"Checking if cable between {parent_device.hostname} and {self.__netbox_device.name} exists...")
         # Если интерфейса хоста нет кабеля - создаем кабель между интерфейсами свича и хостом
         if not self.__netbox_interface.cable:
