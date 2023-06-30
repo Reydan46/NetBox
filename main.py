@@ -127,11 +127,13 @@ class NetworkDevice:
 
 
 class HostInterface:
-    def __init__(self, name, untagged):
+    def __init__(self, name, untagged, ip_address):
         self.name = name
         self.type = 'other'
         self.untagged = untagged
         self.tagged = []
+        self.ip_address = ip_address
+        self.ip_with_prefix = ip_address + '/24'
 
 
 # ========================================================================
@@ -257,6 +259,7 @@ for csv_device in devices_reader:
             host_interface = HostInterface(
                 name=interface.lldp_rem['port'] or 'interface',
                 untagged=interface.untagged,
+                ip_address=ip_address,
             )
             host_netbox_device.add_interface(host_interface)
             host_netbox_device.connect_endpoint(switch_network_device, interface)
