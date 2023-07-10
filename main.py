@@ -27,7 +27,7 @@ class NetworkDevice:
 
     @classmethod
     def initialize_sites(cls):
-        with open('prefixes.csv') as f:
+        with open('switches.csv') as f:
             reader = csv.DictReader(f, delimiter=';')
             for row in reader:
                 site = Site(row['site'], row['prefix'], row.get('gw', None))
@@ -169,7 +169,7 @@ devices_reader, act = csv_reader()
 # ГЛАВНЫЙ ЦИКЛ
 # ========================================================================
 NetboxDevice.create_connection()
-NetworkDevice.initialize_sites()  # Получаем словарь сайтов из prefixes.csv
+NetworkDevice.initialize_sites()  # Получаем словарь сайтов из switches.csv
 SNMPDevice.load_models('models.list')  # загружаем словарь моделей по семействам
 
 for csv_device in devices_reader:

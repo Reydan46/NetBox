@@ -172,35 +172,41 @@ class NetboxDevice:
 
     def __create_ip_address(self, interface):
         # Проверка существования IP-адреса в NetBox
-        logger.debug(
-            f"Checking if IP address {interface.ip_with_prefix} already exists in NetBox...")
-        existing_ip = self.__netbox_connection.ipam.ip_addresses.get(
-            address=interface.ip_with_prefix
-        )
-
-        if existing_ip:
+        try:
             logger.debug(
-                f"IP address {interface.ip_with_prefix} already exists")
-            existing_ip.assigned_object_type = "dcim.interface"
-            existing_ip.assigned_object_id = self.__netbox_interface.id
-            existing_ip.save()
-        else:
-            logger.debug(f"Creating IP address {interface.ip_with_prefix}...")
-            existing_ip = self.__netbox_connection.ipam.ip_addresses.create(
-                address=interface.ip_with_prefix,
-                status="active",
-                assigned_object_type="dcim.interface",
-                assigned_object_id=self.__netbox_interface.id,
+                f"Checking if IP address {interface.ip_with_prefix} already exists in NetBox...")
+            existing_ip = self.__netbox_connection.ipam.ip_addresses.get(
+                address=interface.ip_with_prefix
             )
 
-        # Проверка необходимости назначения IP-адреса основным
-        if interface.ip_address == self.__ip_address:
-            if str(self.__netbox_device.primary_ip4) != interface.ip_with_prefix:
+            if existing_ip:
                 logger.debug(
-                    f"Setting {interface.ip_address} as primary IP address")
-                self.__netbox_device.primary_ip4 = {
-                    'address': interface.ip_with_prefix}
-                self.__netbox_device.save()
+                    f"IP address {interface.ip_with_prefix} already exists")
+                existing_ip.assigned_object_type = "dcim.interface"
+                existing_ip.assigned_object_id = self.__netbox_interface.id
+                existing_ip.save()
+            else:
+                logger.debug(f"Creating IP address {interface.ip_with_prefix}...")
+                existing_ip = self.__netbox_connection.ipam.ip_addresses.create(
+                    address=interface.ip_with_prefix,
+                    status="active",
+                    assigned_object_type="dcim.interface",
+                    assigned_object_id=self.__netbox_interface.id,
+                )
+
+            # Проверка необходимости назначения IP-адреса основным
+            if interface.ip_address == self.__ip_address:
+                if str(self.__netbox_device.primary_ip4) != interface.ip_with_prefix:
+                    logger.debug(
+                        f"Setting {interface.ip_address} as primary IP address")
+                    self.__netbox_device.primary_ip4 = {
+                        'address': interface.ip_with_prefix}
+                    self.__netbox_device.save()
+        
+        except pynetbox.core.query.RequestError:
+            error_message = f"Request failed for IP address {interface.ip_with_prefix}"
+            calling_function = inspect.stack()[1].function
+            NonCriticalError(error_message, interface.ip_with_prefix, calling_function)
 
     def connect_endpoint(self, parent_device, interface):
         def recreate_cable():
