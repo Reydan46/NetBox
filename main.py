@@ -159,10 +159,15 @@ def csv_reader():
     devices_reader.__init__(devices_file, delimiter=";")
     return devices_reader, act
 
+def read_host_exceptions():
+    with open('host_exceptions.list', 'r') as f:
+        return [line.strip() for line in f.readlines()]
 
 # ========================================================================
 #                               Тело скрипта
 # ========================================================================
+# Читаем csv файл со списком исключений для создания хостов
+host_exceptions_list = read_host_exceptions()
 # Читаем csv файл со списком устройств
 devices_reader, act = csv_reader()
 
@@ -242,7 +247,7 @@ for csv_device in devices_reader:
                 ipaddress.ip_address(ip_address) in site.ip_range
                 for site in switch_network_device.sites
             )
-            if is_ip_in_site_range:
+            if is_ip_in_site_range or ip_address in host_exceptions_list:
                 continue
 
             # Создаем хост в netbox
