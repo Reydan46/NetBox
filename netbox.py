@@ -27,6 +27,7 @@ class NetboxDevice:
     # ====================================================================
 
     # Создание netbox соединения
+
     @classmethod
     def create_connection(cls):
         try:
@@ -56,8 +57,8 @@ class NetboxDevice:
             return None
 
     # Создаем экземпляр устройства netbox
-    def __init__(self, site_slug, model, role, ip_address, vlans, hostname=None, serial_number=None) -> None:
-        self.__hostname = hostname
+    def __init__(self, site_slug, model, role, hostname, serial_number=None, ip_address=None, vlans=None) -> None:
+        self.hostname = hostname
         self.__site_slug = site_slug
         self.__model = model
         self.__role = role
@@ -74,16 +75,11 @@ class NetboxDevice:
 
     def __get_netbox_device(self):
         device = self.__netbox_connection.dcim.devices.get(
-            name=self.__hostname, site=self.__site_slug)
-        if not device:
-            device = self.__netbox_connection.dcim.virtual_chassis.get(
-                name=self.__hostname, site=self.__site_slug)
+            name=self.hostname, site=self.__site_slug)
         return device
 
     def __check_serial_number(self):
         if self.__serial_number and self.__netbox_device.serial != self.__serial_number:
-            # error_msg = f"Serial number of the device {self.__hostname} ({self.__serial_number}) does not match the serial number of the device in NetBox ({self.__netbox_device.serial})."
-            # raise Error(error_msg)
             self.__netbox_device.serial = self.__serial_number
             self.__netbox_device.save()
             logger.debug(
@@ -113,7 +109,7 @@ class NetboxDevice:
 
         # Создаем устройство в NetBox
         self.__netbox_device = self.__netbox_connection.dcim.devices.create(
-            name=self.__hostname,
+            name=self.hostname,
             device_type=self.__netbox_device_type.id,
             site=self.__netbox_site.id,
             device_role=self.__netbox_device_role.id,
@@ -125,6 +121,24 @@ class NetboxDevice:
             self.__netbox_device.save()
 
         logger.debug("Device created")
+
+    def __get_netbox_interface(self, interface):
+        """Check if interface exists in NetBox, else create it."""
+        logger.info(
+            f"Checking if interface {interface.name} already exists in NetBox...")
+        existing_interface = self.__netbox_connection.dcim.interfaces.get(
+            name=interface.name, device=self.__netbox_device.name
+        )
+        if not existing_interface:
+            logger.debug(f"Creating interface {interface.name}...")
+            existing_interface = self.__netbox_connection.dcim.interfaces.create(
+                name=interface.name,
+                device=self.__netbox_device.id,
+                type=getattr(interface, 'type', 'other'),
+            )
+        else:
+            logger.debug(f"Interface {interface.name} already exists")
+        self.__netbox_interface = existing_interface
 
     def add_interface(self, interface):
         # Поиск netbox-объекта влана по VLAN ID
@@ -146,25 +160,8 @@ class NetboxDevice:
             ] if (vlan_obj := find_vlan_object(vlan_id)) is not None]
             netbox_interface.save()
 
-        # Проверка существования интерфейса в NetBox
-        logger.info(
-            f"Checking if interface {interface.name} already exists in NetBox...")
-        existing_interface = self.__netbox_connection.dcim.interfaces.get(
-            name=interface.name, device=self.__netbox_device.name
-        )
-
-        if existing_interface:
-            logger.debug(f"Interface {interface.name} already exists")
-            self.__netbox_interface = existing_interface
-        else:
-            logger.debug(f"Creating interface {interface.name}...")
-            self.__netbox_interface = self.__netbox_connection.dcim.interfaces.create(
-                name=interface.name,
-                device=self.__netbox_device.id,
-                type=getattr(interface, 'type', 'other'),
-            )
+        self.__get_netbox_interface(interface)
         update_interface_fields(self.__netbox_interface, interface)
-
         # Проверка наличия у интерфейса IP-адреса
         if hasattr(interface, 'ip_with_prefix'):
             logger.debug(f"Interface {interface.name} has IP address")
@@ -186,7 +183,8 @@ class NetboxDevice:
                 existing_ip.assigned_object_id = self.__netbox_interface.id
                 existing_ip.save()
             else:
-                logger.debug(f"Creating IP address {interface.ip_with_prefix}...")
+                logger.debug(
+                    f"Creating IP address {interface.ip_with_prefix}...")
                 existing_ip = self.__netbox_connection.ipam.ip_addresses.create(
                     address=interface.ip_with_prefix,
                     status="active",
@@ -202,18 +200,19 @@ class NetboxDevice:
                     self.__netbox_device.primary_ip4 = {
                         'address': interface.ip_with_prefix}
                     self.__netbox_device.save()
-        
+
         except pynetbox.core.query.RequestError:
             error_message = f"Request failed for IP address {interface.ip_with_prefix}"
             calling_function = inspect.stack()[1].function
-            NonCriticalError(error_message, interface.ip_with_prefix, calling_function)
-
-    def connect_endpoint(self, parent_device, interface):
+            NonCriticalError(
+                error_message, interface.ip_with_prefix, calling_function)
+    
+    def connect_to_neighbor(self, neighbor_device, interface):
         def recreate_cable():
             logger.debug(f'Deleting the cable...')
             self.__netbox_interface.cable.delete()
             create_cable()
-
+        
         def create_cable():
             logger.info(f'Creating the cable...')
             try:
@@ -223,34 +222,86 @@ class NetboxDevice:
                         "object_type": 'dcim.interface',
                     }],
                     b_terminations=[{
-                        "object_id": parent_interface.id,
-                        "object_type": 'dcim.interface',
+                        "object_id": self.__neighbor_interface.id,
+                        "object_type": f'dcim.{interface.kind}',
                     }]
                 )
                 logger.debug(f'The cable has been created')
-            except Exception:
-                Error('Cable creation failed', self.__ip_address)
+            except Exception as e:
+                Error(
+                    f'Cable connection to {neighbor_device.hostname} {self.__neighbor_interface.name} failed.\n{e}', self.__ip_address)
 
-        # Netbox-объект интерфейса свича
-        parent_interface = self.__netbox_connection.dcim.interfaces.get(
-            name=interface.name,
-            device=parent_device.hostname,
-        )
+        # Netbox-объект интерфейса
+        if interface.kind == 'interface':
+            self.__neighbor_interface = self.__netbox_connection.dcim.interfaces.get(
+                name=interface.name,
+                device=neighbor_device.hostname,
+            )
+        elif interface.kind == 'rearport':
+            self.__neighbor_interface = self.__netbox_connection.dcim.rear_ports.get(
+                device=neighbor_device.hostname,
+            )
+        elif interface.kind == 'frontport':
+            self.__neighbor_interface = self.__netbox_connection.dcim.front_ports.get(
+                device=neighbor_device.hostname,
+            )
+
         logger.info(
-            f"Checking if cable between {parent_device.hostname} and {self.__netbox_device.name} exists...")
+            f"Checking if cable in {self.__netbox_interface.name} exists...")
         # Если интерфейса хоста нет кабеля - создаем кабель между интерфейсами свича и хостом
         if not self.__netbox_interface.cable:
             create_cable()
         # Если кабель существует, проверяем что он включен в соответсвующий порт свича
         else:
             logger.debug(f'The cable already exists')
-            if self.__netbox_interface.connected_endpoints:
-                for endpoint in self.__netbox_interface.connected_endpoints:
-                    # Если кабель включен в другой порт - удаляем, создаем новый
-                    if endpoint.id != parent_interface.id:
-                        NonCriticalError(
-                            f'Кабель включен в другой порт ({endpoint.device} {endpoint})'
+            if self.__netbox_interface.link_peers_type:
+                # Если сейчас соседский интерфейс dcim.interface
+                if self.__netbox_interface.link_peers_type == 'dcim.interface':
+                    if self.__netbox_interface.link_peers_type == ('dcim.'+interface.kind):
+                        for link_peer in self.__netbox_interface.link_peers:
+                            # Если кабель включен в другой порт - удаляем, создаем новый
+                            if link_peer.id != self.__neighbor_interface.id:
+                                NonCriticalError(
+                                    f'Кабель включен в другой порт: ({link_peer.device} {link_peer})'
+                                )
+                                recreate_cable()
+                    # Переключать свич или хост в розетку - можно
+                    else:
+                        logger.info(
+                            f'Переключаем устройство в розетку: ({self.__neighbor_interface.device} {self.__neighbor_interface})...'
                         )
                         recreate_cable()
+                # Если сейчас соседский интерфейс dcim.rearport
+                if self.__netbox_interface.link_peers_type == 'dcim.rearport':
+                    # Никогда не отключаем порт свича от розетки в "пустоту"
+                    if self.__netbox_interface.link_peers_type == ('dcim.'+interface.kind):
+                        for link_peer in self.__netbox_interface.link_peers:
+                            # Если кабель включен в другой порт - удаляем, создаем новый
+                            if link_peer.id != self.__neighbor_interface.id:
+                                NonCriticalError(
+                                    f'Кабель включен в другой порт: ({link_peer.device} {link_peer})'
+                                )
+                                recreate_cable()
+                # Если сейчас соседский интерфейс dcim.frontport
+                if self.__netbox_interface.link_peers_type == 'dcim.frontport':
+                    if self.__netbox_interface.link_peers_type == ('dcim.'+interface.kind):
+                        for link_peer in self.__netbox_interface.link_peers:
+                            # Если кабель включен в другой порт - удаляем, создаем новый
+                            if link_peer.id != self.__neighbor_interface.id:
+                                NonCriticalError(
+                                    f'Кабель включен в другой порт: ({link_peer.device} {link_peer})'
+                                )
+                                recreate_cable()
+                    # Переключать хост от розетки в "пустоту" - можно, если при этом меняется порт свича
+                    else:
+                        for endpoint in self.__netbox_interface.connected_endpoints:
+                            if endpoint.id != self.__neighbor_interface.id:
+                                logger.info(
+                                    f'Отключаем хост от розетки...'
+                                )
+                                recreate_cable()
             else:
+                logger.debug(
+                    f'Кабель не включен в соседнее устройство: ({self.__neighbor_interface.device} {self.__neighbor_interface})'
+                )
                 recreate_cable()

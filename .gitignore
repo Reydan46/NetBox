@@ -12,3 +12,4 @@ prefixes.csv
 utilities/host_searcher.py
 switches.csv
 host_exceptions.list
+sockets.csv
