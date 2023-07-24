@@ -231,20 +231,27 @@ class NetboxDevice:
                 Error(
                     f'Cable connection to {neighbor_device.hostname} {self.__neighbor_interface.name} failed.\n{e}', self.__ip_address)
 
-        # Netbox-объект интерфейса
-        if interface.kind == 'interface':
-            self.__neighbor_interface = self.__netbox_connection.dcim.interfaces.get(
-                name=interface.name,
-                device=neighbor_device.hostname,
-            )
-        elif interface.kind == 'rearport':
-            self.__neighbor_interface = self.__netbox_connection.dcim.rear_ports.get(
-                device=neighbor_device.hostname,
-            )
-        elif interface.kind == 'frontport':
-            self.__neighbor_interface = self.__netbox_connection.dcim.front_ports.get(
-                device=neighbor_device.hostname,
-            )
+        def check_and_recreate_cable_if_needed():
+            for link_peer in self.__netbox_interface.link_peers:
+                # If the cable is connected to another port, delete it and create a new one
+                if link_peer.id != self.__neighbor_interface.id:
+                    NonCriticalError(
+                        f'Кабель включен в другой порт: ({link_peer.device} {link_peer})'
+                    )
+                    recreate_cable()
+
+        # Mapping between interface kind and corresponding Netbox connection method
+        interface_mapping = {
+            'interface': self.__netbox_connection.dcim.interfaces.get,
+            'rearport': self.__netbox_connection.dcim.rear_ports.get,
+            'frontport': self.__netbox_connection.dcim.front_ports.get,
+        }
+
+        # Get the neighbor interface based on the kind of interface
+        self.__neighbor_interface = interface_mapping[interface.kind](
+            device=neighbor_device.hostname,
+            name=interface.name if interface.kind == 'interface' else None,
+        )
 
         logger.info(
             f"Checking if cable in {self.__netbox_interface.name} exists...")
@@ -258,13 +265,7 @@ class NetboxDevice:
                 # Если сейчас соседский интерфейс dcim.interface
                 if self.__netbox_interface.link_peers_type == 'dcim.interface':
                     if self.__netbox_interface.link_peers_type == ('dcim.'+interface.kind):
-                        for link_peer in self.__netbox_interface.link_peers:
-                            # Если кабель включен в другой порт - удаляем, создаем новый
-                            if link_peer.id != self.__neighbor_interface.id:
-                                NonCriticalError(
-                                    f'Кабель включен в другой порт: ({link_peer.device} {link_peer})'
-                                )
-                                recreate_cable()
+                        check_and_recreate_cable_if_needed()
                     # Переключать свич или хост в розетку - можно
                     else:
                         logger.info(
@@ -275,23 +276,11 @@ class NetboxDevice:
                 if self.__netbox_interface.link_peers_type == 'dcim.rearport':
                     # Никогда не отключаем порт свича от розетки в "пустоту"
                     if self.__netbox_interface.link_peers_type == ('dcim.'+interface.kind):
-                        for link_peer in self.__netbox_interface.link_peers:
-                            # Если кабель включен в другой порт - удаляем, создаем новый
-                            if link_peer.id != self.__neighbor_interface.id:
-                                NonCriticalError(
-                                    f'Кабель включен в другой порт: ({link_peer.device} {link_peer})'
-                                )
-                                recreate_cable()
+                        check_and_recreate_cable_if_needed()
                 # Если сейчас соседский интерфейс dcim.frontport
                 if self.__netbox_interface.link_peers_type == 'dcim.frontport':
                     if self.__netbox_interface.link_peers_type == ('dcim.'+interface.kind):
-                        for link_peer in self.__netbox_interface.link_peers:
-                            # Если кабель включен в другой порт - удаляем, создаем новый
-                            if link_peer.id != self.__neighbor_interface.id:
-                                NonCriticalError(
-                                    f'Кабель включен в другой порт: ({link_peer.device} {link_peer})'
-                                )
-                                recreate_cable()
+                        check_and_recreate_cable_if_needed()
                     # Переключать хост от розетки в "пустоту" - можно, если при этом меняется порт свича
                     else:
                         for endpoint in self.__netbox_interface.connected_endpoints:
