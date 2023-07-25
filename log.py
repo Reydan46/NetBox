@@ -1,32 +1,22 @@
 import logging
-import sys
+from logging.handlers import RotatingFileHandler
 
 # Initialize logger with the name 'NetBox'
 logger = logging.getLogger('NetBox')
+logger.setLevel(logging.INFO)  # Set logging level to INFO
 
-# Set logging level (uncomment the desired level)
-# logger.setLevel(logging.DEBUG)
-logger.setLevel(logging.INFO)
-# logger.setLevel(logging.WARNING)
-# logger.setLevel(logging.ERROR)
-
-# Configure console (stream) handler to print log messages
-c_handler = logging.StreamHandler(sys.stdout)
-c_format = logging.Formatter(
-    "[%(asctime)s.%(msecs)03d %(module)s - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
-c_handler.setFormatter(c_format)
+# Configure Console Handler
+c_format = '[%(asctime)s.%(msecs)03d %(module)s - %(funcName)23s() ] %(message)s'
+c_handler = logging.StreamHandler()
+c_handler.setFormatter(logging.Formatter(
+    c_format, datefmt='%d.%m.%Y %H:%M:%S'))
 logger.addHandler(c_handler)
 
-# Configure file handler to store log messages in 'NetBox.log' with mode 'w' (overwrite)
-f_handler = logging.FileHandler('NetBox.log', mode='w', encoding='utf-8')
-f_format = logging.Formatter(
-    "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s", datefmt='%d.%m.%Y %H:%M:%S')
-f_handler.setFormatter(f_format)
+# Configure File Handler
+f_format = "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s"
+# Use underscore for readability in large numbers
+f_handler = RotatingFileHandler(
+    'NetBox.log', maxBytes=1_000_000, backupCount=5)
+f_handler.setFormatter(logging.Formatter(
+    f_format, datefmt='%d.%m.%Y %H:%M:%S'))
 logger.addHandler(f_handler)
-
-# Uncomment the following lines to test different logging levels
-# logger.debug('logger.debug')
-# logger.info('logger.info')
-# logger.warning('logger.warning')
-# logger.error('logger.error')
-# logger.exception('logger.exception')

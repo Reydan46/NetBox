@@ -206,13 +206,13 @@ class NetboxDevice:
             calling_function = inspect.stack()[1].function
             NonCriticalError(
                 error_message, interface.ip_with_prefix, calling_function)
-    
+
     def connect_to_neighbor(self, neighbor_device, interface):
         def recreate_cable():
             logger.debug(f'Deleting the cable...')
             self.__netbox_interface.cable.delete()
             create_cable()
-        
+
         def create_cable():
             logger.info(f'Creating the cable...')
             try:
