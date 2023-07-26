@@ -5,6 +5,7 @@ import re
 import pandas as pd
 from prettytable import PrettyTable
 
+import oid.general
 from errors import Error, NonCriticalError
 from log import logger
 from netbox import NetboxDevice
@@ -39,10 +40,21 @@ class NetworkDevice:
 
     @classmethod
     def __populate_site_data(cls, site):
-        if site.gw:
-            site.arp_table = SNMPDevice.get_arp_table(site.gw)
         site.netbox_vlans_objs = NetboxDevice.get_vlans(site.site_slug)
+        if not site.gw:
+            return
+        # Получаем arp-таблицу с марша площадки
+        site.arp_table = SNMPDevice.get_network_table(
+            site.gw, oid.general.arp_mac, 'IP-MAC')
+        site.subnets = cls.__get_subnets(SNMPDevice.get_network_table(
+            site.gw, oid.general.ip_mask, 'IP-MASK'))  # Получаем список подсетей площадки
 
+    @staticmethod
+    def __get_subnets(ip_table):
+        return [str(subnet.network_address) + '/' + str(subnet.prefixlen)
+                for ip, mask in ip_table.items()
+                if (subnet := ipaddress.IPv4Network(ip + '/' + mask, strict=False)).is_private
+                and str(subnet.network_address) not in ("0.0.0.0", "127.0.0.0")]
     # ====================================================================
 
     def __init__(self, ip_address, role, community_string):
@@ -147,7 +159,21 @@ class HostInterface(Interface):
         self.untagged = untagged
         self.tagged = []
         self.ip_address = ip_address
-        self.ip_with_prefix = ip_address + '/24'
+        self.ip_with_prefix = self.determine_ip_with_prefix()
+
+    def determine_ip_with_prefix(self):
+        for site in switch_network_device.sites:
+            if switch_network_device.site_slug == site.site_slug:
+                return self.get_ip_with_subnet_prefix(site.subnets)
+
+    def get_ip_with_subnet_prefix(self, subnet_list):
+        for subnet in subnet_list:
+            if self.ip_in_subnet(self.ip_address, subnet):
+                return f'{self.ip_address}/{subnet.split("/")[-1]}'
+
+    @staticmethod
+    def ip_in_subnet(ip, subnet):
+        return ipaddress.ip_address(ip) in ipaddress.ip_network(subnet)
 
 # ========================================================================
 #                                 Функции
