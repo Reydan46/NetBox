@@ -1,12 +1,9 @@
 import os
 import sys
-from log import logger, logging
 from string import Formatter
 
 from prettytable import PrettyTable
 from colorama import init, Fore
-
-from errors import Error, NonCriticalError
 
 init()
 
@@ -15,6 +12,8 @@ parent = os.path.dirname(current)
 sys.path.append(parent)
 
 from snmp import SNMPDevice
+from log import logger, logging
+from errors import Error, NonCriticalError
 import oid.general
 import oid.cisco_sg
 import oid.cisco_catalyst

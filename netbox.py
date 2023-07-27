@@ -123,49 +123,46 @@ class NetboxDevice:
         logger.debug("Device created")
 
     def __get_netbox_interface(self, interface):
-        """Check if interface exists in NetBox, else create it."""
         logger.info(
             f"Checking if interface {interface.name} already exists in NetBox...")
         existing_interface = self.__netbox_connection.dcim.interfaces.get(
             name=interface.name, device=self.__netbox_device.name
         )
-        if not existing_interface:
+
+        if not existing_interface and interface.type:
             logger.debug(f"Creating interface {interface.name}...")
             existing_interface = self.__netbox_connection.dcim.interfaces.create(
                 name=interface.name,
                 device=self.__netbox_device.id,
-                type=getattr(interface, 'type', 'other'),
+                type=interface.type,
             )
         else:
             logger.debug(f"Interface {interface.name} already exists")
+
         self.__netbox_interface = existing_interface
 
     def add_interface(self, interface):
-        # Поиск netbox-объекта влана по VLAN ID
-        def find_vlan_object(vlan_id):
-            for vlan in self.__vlans:
-                if str(vlan.vid) == vlan_id:
-                    return vlan
+        self.__get_netbox_interface(interface)
 
-        def update_interface_fields(netbox_interface, interface_object):
+        if self.__netbox_interface:
             update_fields = ['name', 'mtu', 'mac', "description", 'mode']
             for field in update_fields:
-                if hasattr(interface_object, field):
-                    setattr(netbox_interface, field,
-                            getattr(interface_object, field))
+                val = getattr(interface, field, None)
+                if val is not None:
+                    setattr(self.__netbox_interface, field, val)
 
-            netbox_interface.untagged_vlan = find_vlan_object(
-                interface_object.untagged)
-            netbox_interface.tagged_vlans = [vlan_obj for vlan_id in interface_object.tagged or [
-            ] if (vlan_obj := find_vlan_object(vlan_id)) is not None]
-            netbox_interface.save()
+            self.__netbox_interface.untagged_vlan = next(
+                (vlan for vlan in self.__vlans if str(vlan.vid) == interface.untagged), None)
+            self.__netbox_interface.tagged_vlans = [
+                vlan for vlan_id in interface.tagged or []
+                for vlan in self.__vlans
+                if str(vlan.vid) == vlan_id
+            ]
+            self.__netbox_interface.save()
 
-        self.__get_netbox_interface(interface)
-        update_interface_fields(self.__netbox_interface, interface)
-        # Проверка наличия у интерфейса IP-адреса
-        if hasattr(interface, 'ip_with_prefix'):
-            logger.debug(f"Interface {interface.name} has IP address")
-            self.__create_ip_address(interface)
+            if hasattr(interface, 'ip_with_prefix'):
+                logger.debug(f"Interface {interface.name} has IP address")
+                self.__create_ip_address(interface)
 
     def __create_ip_address(self, interface):
         try:
@@ -184,9 +181,9 @@ class NetboxDevice:
             def delete_and_create_new_ip(existing_ip):
                 logger.debug(f"Deleting IP address {existing_ip}...")
                 existing_ip.delete()
-                existing_ips.remove(existing_ip)   # Remove the deleted IP
                 if len(existing_ips) < 2:
                     create_new_ip()
+                existing_ips.remove(existing_ip)   # Remove the deleted IP
 
             def create_new_ip():
                 logger.debug(

@@ -19,7 +19,7 @@ class RegexAction:
 
 
 class Interface:
-    def __init__(self, index, ip_address=None, mask=None, name=None, MTU=None, MAC=None, mode=None, untagged=None, tagged=None, type='other'):
+    def __init__(self, index, ip_address=None, mask=None, name=None, MTU=None, MAC=None, mode=None, untagged=None, tagged=None, type=None):
         self.ip_address = ip_address
         self.mask = mask
         self.index = index
