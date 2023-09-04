@@ -56,7 +56,7 @@ class SNMPDevice:
 
     @classmethod
     def get_network_table(cls, ip_address, table_oid, table_tag, community_string='public'):
-        logger.info(f'Getting {table_tag} table for {ip_address}')
+        logger.info(f'Getting {table_tag} table from GW {ip_address} ')
         snmp_session = cls(ip_address, community_string)
         table_data = snmp_session.snmpwalk(
             table_oid, table_tag, hex=True, ip_address=ip_address, community_string=community_string)
@@ -232,7 +232,7 @@ class SNMPDevice:
         value = self.snmpwalk(oid.general.model)
         if value:
             re_out = re.search(
-                r'(\b[A-Z][A-Z0-9]{2,}-[A-Z0-9]{2,8}\b)', value[0])
+                r'(\b[A-Z][A-Z0-9]{2,5}-[A-Z0-9]{1,4}-?[A-Z0-9\/]{1,5}\b)', value[0])
             if re_out:
                 self.model = re_out.group(1)
                 return self.model
@@ -289,7 +289,8 @@ class SNMPDevice:
                 self.model_family = model_family
                 return self.model_family
 
-        raise Error(f"{self.model} не найдена в models.list")
+        NonCriticalError(f"{self.model} не найдена в models.list")
+        return None
 
 #   БЛОК ПОЛУЧЕНИЯ ИНТЕРФЕЙСОВ
 # ========================================================================

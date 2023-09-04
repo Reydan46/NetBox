@@ -17,7 +17,7 @@ logger.addHandler(c_handler)
 f_format = "[%(asctime)s.%(msecs)03d - %(funcName)23s() ] %(message)s"
 # Use underscore for readability in large numbers
 f_handler = RotatingFileHandler(
-    'NetBox.log', maxBytes=1_000_000, backupCount=5, encoding='utf-8')
+    'NetBox.log', maxBytes=10_000_000, backupCount=5, encoding='utf-8')
 f_handler.setFormatter(logging.Formatter(
     f_format, datefmt='%d.%m.%Y %H:%M:%S'))
 logger.addHandler(f_handler)

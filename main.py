@@ -46,11 +46,11 @@ class NetworkDevice:
         # Получаем arp-таблицу с марша площадки
         site.arp_table = SNMPDevice.get_network_table(
             site.gw, oid.general.arp_mac, 'IP-MAC')
-        site.subnets = cls.__get_subnets(SNMPDevice.get_network_table(
-            site.gw, oid.general.ip_mask, 'IP-MASK'))  # Получаем список подсетей площадки
+        site.subnets = cls.get_subnets(SNMPDevice.get_network_table(
+            site.gw, oid.general.ip_mask, 'IP-MASK'))  # Получаем таблицу подсетей площадки
 
     @staticmethod
-    def __get_subnets(ip_table):
+    def get_subnets(ip_table):
         return [str(subnet.network_address) + '/' + str(subnet.prefixlen)
                 for ip, mask in ip_table.items()
                 if (subnet := ipaddress.IPv4Network(ip + '/' + mask, strict=False)).is_private
@@ -62,6 +62,7 @@ class NetworkDevice:
         self.community_string: str = community_string
         self.role: str = role
         self.arp_table = None
+        self.physical_interfaces = []
 
     # Временный для дебага - потом удалить
     def print_attributes(self):
@@ -314,10 +315,12 @@ if __name__ == '__main__':
             switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces()
             # получаем семейство моделей
             switch_network_device.model_family = snmp_device.find_model_family()
-            # получаем список физических интерфейсов
-            switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces()
-            # проверяем наличие вланов устройства в netbox
-            switch_network_device.check_vlans()
+            if switch_network_device.model_family is not None:
+                #input('Нажмите любую клавишу для продолжения...')
+                # получаем список физических интерфейсов
+                switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces()
+                # проверяем наличие вланов устройства в netbox
+                switch_network_device.check_vlans()
 
             # БЛОК РАБОТЫ С МОДУЛЕМ NETBOX
             # пересоздание соединения с netbox на случай, если по snmp инфа собиралась слишком долго
@@ -335,27 +338,29 @@ if __name__ == '__main__':
             # создаем/обновляем интерфейсы в netbox
             for interface in switch_network_device.virtual_interfaces:
                 switch_netbox_device.add_interface(interface)
-            for interface in switch_network_device.physical_interfaces:
-                interface.kind = 'interface'
-                switch_netbox_device.add_interface(interface)
+            
+            if switch_network_device.physical_interfaces:
+                for interface in switch_network_device.physical_interfaces:
+                    interface.kind = 'interface'
+                    switch_netbox_device.add_interface(interface)
 
-                # БЛОК РАБОТЫ С КОНЕЧНЫМИ УСТРОЙСТВАМИ
-                # Определяем номер порта
-                match = re.search(
-                    r"(?<!Po)\d+$", interface.name
-                )
-                if match:
-                    port_number = match.group()
-                    pd_socket = sockets[(sockets["switch"] == switch_network_device.ip_address) & (
-                        sockets["interface"] == port_number)]["name"]
-                    # Если есть соответствующая розетка в списке sockets.csv
-                    if not pd_socket.empty:
-                        interface.socket = pd_socket.iloc[0]
-                        socket_netbox_device, frontport = create_socket(
-                            interface, switch_network_device)
-                        create_host(socket_netbox_device, frontport)
-                    else:
-                        create_host(switch_netbox_device, interface)
+                    # БЛОК РАБОТЫ С КОНЕЧНЫМИ УСТРОЙСТВАМИ
+                    # Определяем номер порта
+                    match = re.search(
+                        r"(?<!Po)\d+$", interface.name
+                    )
+                    if match:
+                        port_number = match.group()
+                        pd_socket = sockets[(sockets["switch"] == switch_network_device.ip_address) & (
+                            sockets["interface"] == port_number)]["name"]
+                        # Если есть соответствующая розетка в списке sockets.csv
+                        if not pd_socket.empty:
+                            interface.socket = pd_socket.iloc[0]
+                            socket_netbox_device, frontport = create_socket(
+                                interface, switch_network_device)
+                            create_host(socket_netbox_device, frontport)
+                        else:
+                            create_host(switch_netbox_device, interface)
 
         except Error as e:
             e.store_error(csv_device['ip device'].strip(), e)

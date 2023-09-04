@@ -31,7 +31,7 @@ class NetboxDevice:
     @classmethod
     def create_connection(cls):
         try:
-            cls.__netbox_connection = pynetbox.api(
+            cls.netbox_connection = pynetbox.api(
                 url=cls.__netbox_url,
                 token=cls.__netbox_token
             )
@@ -45,7 +45,7 @@ class NetboxDevice:
     def get_vlans(cls, site_slug):
         try:
             vlans = list(
-                cls.__netbox_connection.ipam.vlans.filter(site=site_slug))
+                cls.netbox_connection.ipam.vlans.filter(site=site_slug))
             # Extract VLAN IDs from the objects
             vlan_ids = [str(vlan.vid) for vlan in vlans]
             logger.debug(f"Found {len(vlan_ids)} VLANs for site {site_slug}")
@@ -55,6 +55,22 @@ class NetboxDevice:
             calling_function = inspect.stack()[1].function
             NonCriticalError(error_message, site_slug, calling_function)
             return None
+
+    @classmethod
+    def get_netbox_ip(cls, ip, ip_with_prefix):
+        logger.info(f'Getting IP object from NetBox...')
+        netbox_ip = cls.netbox_connection.ipam.ip_addresses.get(
+            address=ip_with_prefix,
+        )
+        if not netbox_ip:
+            logger.info(f'IP {ip_with_prefix} not found in NetBox. Creating...')
+            netbox_ip = cls.netbox_connection.ipam.ip_addresses.create(
+                address=ip_with_prefix,
+                status='active',
+            )
+        parent_prefix = list(cls.netbox_connection.ipam.prefixes.filter(contains=ip_with_prefix))
+        site_slug = parent_prefix[0].site.slug
+        return netbox_ip, site_slug
 
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, model, role, hostname, serial_number=None, ip_address=None, vlans=None) -> None:
@@ -74,7 +90,7 @@ class NetboxDevice:
             self.__check_serial_number()
 
     def __get_netbox_device(self):
-        device = self.__netbox_connection.dcim.devices.get(
+        device = self.netbox_connection.dcim.devices.get(
             name=self.hostname, site=self.__site_slug)
         return device
 
@@ -92,23 +108,23 @@ class NetboxDevice:
 
         logger.debug("Creating device...")
 
-        self.__netbox_device_type = self.__netbox_connection.dcim.device_types.get(
+        self.__netbox_device_type = self.netbox_connection.dcim.device_types.get(
             model=self.__model)
         if not self.__netbox_device_type:
             critical_error_not_found("device type", self.__model)
 
-        self.__netbox_site = self.__netbox_connection.dcim.sites.get(
+        self.__netbox_site = self.netbox_connection.dcim.sites.get(
             slug=self.__site_slug)
         if not self.__netbox_site:
             critical_error_not_found("site", self.__site_slug)
 
-        self.__netbox_device_role = self.__netbox_connection.dcim.device_roles.get(
+        self.__netbox_device_role = self.netbox_connection.dcim.device_roles.get(
             name=self.__role)
         if not self.__netbox_device_role:
             critical_error_not_found("device role", self.__role)
 
         # Создаем устройство в NetBox
-        self.__netbox_device = self.__netbox_connection.dcim.devices.create(
+        self.__netbox_device = self.netbox_connection.dcim.devices.create(
             name=self.hostname,
             device_type=self.__netbox_device_type.id,
             site=self.__netbox_site.id,
@@ -125,13 +141,13 @@ class NetboxDevice:
     def __get_netbox_interface(self, interface):
         logger.info(
             f"Checking if interface {interface.name} already exists in NetBox...")
-        existing_interface = self.__netbox_connection.dcim.interfaces.get(
+        existing_interface = self.netbox_connection.dcim.interfaces.get(
             name=interface.name, device=self.__netbox_device.name
         )
 
         if not existing_interface and interface.type:
             logger.debug(f"Creating interface {interface.name}...")
-            existing_interface = self.__netbox_connection.dcim.interfaces.create(
+            existing_interface = self.netbox_connection.dcim.interfaces.create(
                 name=interface.name,
                 device=self.__netbox_device.id,
                 type=interface.type,
@@ -188,7 +204,7 @@ class NetboxDevice:
             def create_new_ip():
                 logger.debug(
                     f"Creating IP address {interface.ip_with_prefix}...")
-                return self.__netbox_connection.ipam.ip_addresses.create(
+                return self.netbox_connection.ipam.ip_addresses.create(
                     address=interface.ip_with_prefix,
                     status="active",
                     assigned_object_type="dcim.interface",
@@ -197,7 +213,7 @@ class NetboxDevice:
 
             logger.debug(
                 f"Checking if IP address {interface.ip_with_prefix} already exists in NetBox...")
-            existing_ips = list(self.__netbox_connection.ipam.ip_addresses.filter(
+            existing_ips = list(self.netbox_connection.ipam.ip_addresses.filter(
                 address=interface.ip_address
             ))
 
@@ -230,7 +246,7 @@ class NetboxDevice:
         def create_cable():
             logger.info(f'Creating the cable...')
             try:
-                self.__netbox_interface.cable = self.__netbox_connection.dcim.cables.create(
+                self.__netbox_interface.cable = self.netbox_connection.dcim.cables.create(
                     a_terminations=[{
                         "object_id": self.__netbox_interface.id,
                         "object_type": 'dcim.interface',
@@ -256,9 +272,9 @@ class NetboxDevice:
 
         # Mapping between interface kind and corresponding Netbox connection method
         interface_mapping = {
-            'interface': self.__netbox_connection.dcim.interfaces.get,
-            'rearport': self.__netbox_connection.dcim.rear_ports.get,
-            'frontport': self.__netbox_connection.dcim.front_ports.get,
+            'interface': self.netbox_connection.dcim.interfaces.get,
+            'rearport': self.netbox_connection.dcim.rear_ports.get,
+            'frontport': self.netbox_connection.dcim.front_ports.get,
         }
 
         # Get the neighbor interface based on the kind of interface
@@ -308,3 +324,38 @@ class NetboxDevice:
                     f'Кабель не включен в соседнее устройство: ({self.__neighbor_interface.device} {self.__neighbor_interface})'
                 )
                 recreate_cable()
+
+
+class NetboxVM(NetboxDevice):
+    def __init__(self, ip_address):
+        self.__ip_address = ip_address
+        self.__netbox_vm = self.__get_or_create_netbox_vm()
+
+    def __get_or_create_netbox_vm(self):
+        self.__netbox_vm = self.netbox_connection.virtual_machines.get(
+            name=self.__ip_address
+        )
+        if not self.__netbox_vm:
+            logger.debug(
+                f'Virtual machine {self.ip_address} not found in NetBox'
+            )
+            netbox_device = self.netbox_connection.devices.get(
+                name=self.ip_address
+            )
+            if netbox_device:
+                raise Error(
+                    f'There is device with IP address {self.ip_address} in NetBox'
+                )
+        logger.info(
+            f'Creating virtual machine {self.ip_address} in NetBox...'
+        )
+        self.__netbox_vm = self.netbox_connection.virtual_machines.create(
+            name=self.__ip_address,
+            status='active',
+        )
+        return self.__netbox_vm
+
+
+class NetboxService():
+    def __init__(self) -> None:
+        pass
