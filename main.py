@@ -211,7 +211,7 @@ def create_host(neighbor_device, neighbor_interface):
     # Чекаем свойства интерфейса и принимаем решение о создании экземпляра для хоста
     ip_address = getattr(interface, 'rem_ip', None)
     if not ip_address:
-        if neighbor_interface.lldp_rem['name'] is not None:
+        if neighbor_interface.lldp_rem['name'] is not None and neighbor_interface.lldp_rem['port'] is not None:
             NetboxDevice.set_description(
                 neighbor_device.hostname,
                 neighbor_interface.name,

@@ -373,7 +373,7 @@ class SNMPDevice:
             interface.mtu = mtu_dict[interface.index]
             interface.status = status_dict[interface.index]
             interface.mac = mac_dict[interface.index]
-            if interface.status == 1:
+            if interface.status == '1':
                 interface.description = hex2string(desc_dict.get(interface.index))
 
             lldp_rem_name = lldp_rem_name_by_index.get(interface.index)
