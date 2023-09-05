@@ -68,6 +68,7 @@ class SNMPDevice:
         self.community_string = community_string
         self.ip_address = ip_address
         self.arp_table = arp_table
+        self.model_family = None
 
         self.model_families = {
             "cisco_catalyst": self.find_interfaces_cisco_catalyst,
@@ -329,18 +330,10 @@ class SNMPDevice:
         # Main logic
         # ========================================================================
         logger.info('Getting physical interfaces...')
-        get_interfaces_func = self.model_families.get(self.model_family)
-        if not get_interfaces_func:
-            raise Error(
-                f'Для семейства "{self.model_family}" не назначена get_interfaces_func()', self.ip_address)
-
-        interfaces = get_interfaces_func()
-        if not interfaces:
-            raise Error(
-                f"get_interfaces_func() вернула пустой список интерфейсов")
-
+        
         int_name_dict = get_snmp_data(oid.general.si_int_name, 'INDEX-DESC')
         mtu_dict = get_snmp_data(oid.general.si_mtu, 'INDEX-INT')
+        status_dict = get_snmp_data(oid.general.si_status, 'INDEX-INT')
         mac_dict = get_snmp_data(
             oid.general.si_mac, 'INDEX-MAC', hex_output=True)
         desc_dict = get_snmp_data(
@@ -360,12 +353,28 @@ class SNMPDevice:
             oid.general.lldp_rem_mac, 'PREINDEX-MAC', hex_output=True)
         lldp_rem_mac_by_index = get_lldp_data_by_index(
             int_name_dict, lldp_loc_port_dict, lldp_rem_mac_dict)
+        
+        if self.model_family:
+            get_interfaces_func = self.model_families.get(self.model_family)
+            if get_interfaces_func:
+                interfaces = get_interfaces_func()
+                if not interfaces:
+                    raise Error(
+                        f"get_interfaces_func() вернула пустой список интерфейсов")
+        else:
+            interfaces = []
+            for key in int_name_dict.keys():
+                interfaces.append(Interface(
+                    index=key,
+                ))
 
         for interface in interfaces:
             interface.name = int_name_dict[interface.index]
             interface.mtu = mtu_dict[interface.index]
+            interface.status = status_dict[interface.index]
             interface.mac = mac_dict[interface.index]
-            interface.description = hex2string(desc_dict.get(interface.index))
+            if interface.status == 1:
+                interface.description = hex2string(desc_dict.get(interface.index))
 
             lldp_rem_name = lldp_rem_name_by_index.get(interface.index)
             lldp_rem_mac = lldp_rem_mac_by_index.get(

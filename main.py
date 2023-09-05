@@ -211,15 +211,33 @@ def create_host(neighbor_device, neighbor_interface):
     # Чекаем свойства интерфейса и принимаем решение о создании экземпляра для хоста
     ip_address = getattr(interface, 'rem_ip', None)
     if not ip_address:
+        if neighbor_interface.lldp_rem['name'] is not None:
+            NetboxDevice.set_description(
+                neighbor_device.hostname,
+                neighbor_interface.name,
+                neighbor_interface.lldp_rem['name'],
+                neighbor_interface.lldp_rem['port'],
+            )
+            return
         return
+    
+    elif ip_address in host_exceptions_list:
+        return
+
     # Не создавать хосты для ip из диапазона свичей
     is_ip_in_site_range = any(
         ipaddress.ip_address(ip_address) in site.ip_range
         for site in switch_network_device.sites
     )
-    if is_ip_in_site_range or ip_address in host_exceptions_list:
+    if is_ip_in_site_range:
+        NetboxDevice.set_description(
+                neighbor_device.hostname,
+                neighbor_interface.name,
+                neighbor_interface.lldp_rem['name'],
+                neighbor_interface.lldp_rem['port'],
+            )
         return
-
+    
     # Создаем хост в netbox
     host_netbox_device = NetboxDevice(
         hostname=ip_address,
@@ -315,12 +333,10 @@ if __name__ == '__main__':
             switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces()
             # получаем семейство моделей
             switch_network_device.model_family = snmp_device.find_model_family()
-            if switch_network_device.model_family is not None:
-                #input('Нажмите любую клавишу для продолжения...')
-                # получаем список физических интерфейсов
-                switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces()
-                # проверяем наличие вланов устройства в netbox
-                switch_network_device.check_vlans()
+            # получаем список физических интерфейсов
+            switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces()
+            # проверяем наличие вланов устройства в netbox
+            switch_network_device.check_vlans()
 
             # БЛОК РАБОТЫ С МОДУЛЕМ NETBOX
             # пересоздание соединения с netbox на случай, если по snmp инфа собиралась слишком долго

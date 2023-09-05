@@ -57,7 +57,7 @@ class NetboxDevice:
             return None
 
     @classmethod
-    def get_netbox_ip(cls, ip, ip_with_prefix):
+    def get_netbox_ip(cls, ip_with_prefix):
         logger.info(f'Getting IP object from NetBox...')
         netbox_ip = cls.netbox_connection.ipam.ip_addresses.get(
             address=ip_with_prefix,
@@ -71,6 +71,14 @@ class NetboxDevice:
         parent_prefix = list(cls.netbox_connection.ipam.prefixes.filter(contains=ip_with_prefix))
         site_slug = parent_prefix[0].site.slug
         return netbox_ip, site_slug
+    
+    @classmethod
+    def set_description(cls, device_name, interface_name, neighbor_name, neighbor_interface):
+        netbox_interface = cls.netbox_connection.dcim.interfaces.get(
+            name=interface_name, device=device_name
+        )
+        netbox_interface.description = f'-={neighbor_name}  {neighbor_interface}=-'
+        netbox_interface.save()
 
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, model, role, hostname, serial_number=None, ip_address=None, vlans=None) -> None:
