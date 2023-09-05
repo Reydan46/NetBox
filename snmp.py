@@ -25,7 +25,7 @@ class Interface:
         self.index = index
         self.name = name
         self.mtu = MTU
-        self.mac = MAC
+        self.mac_address = MAC
         self.mode = mode
         self.type = type
         self.untagged = untagged
@@ -370,9 +370,9 @@ class SNMPDevice:
 
         for interface in interfaces:
             interface.name = int_name_dict[interface.index]
-            interface.mtu = mtu_dict[interface.index]
+            interface.mtu = mtu_dict.get(interface.index)
             interface.status = status_dict[interface.index]
-            interface.mac = mac_dict[interface.index]
+            interface.mac_address = mac_dict.get(interface.index)
             if interface.status == '1':
                 interface.description = hex2string(desc_dict.get(interface.index))
 

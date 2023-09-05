@@ -169,7 +169,7 @@ class NetboxDevice:
         self.__get_netbox_interface(interface)
 
         if self.__netbox_interface:
-            update_fields = ['name', 'mtu', 'mac', "description", 'mode']
+            update_fields = ['name', 'mtu', 'mac_address', "description", 'mode']
             for field in update_fields:
                 val = getattr(interface, field, None)
                 if val is not None:
