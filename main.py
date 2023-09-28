@@ -18,7 +18,7 @@ from snmp import SNMPDevice
 class Site:
     def __init__(self, site_slug, prefix, gw=None):
         self.site_slug = site_slug
-        self.ip_range = ipaddress.ip_network(prefix, strict=False)
+        self.ip_ranges = [ipaddress.ip_network(x.strip(), strict=False) for x in prefix.split(',')]
         self.gw = gw
 
 
@@ -80,9 +80,14 @@ class NetworkDevice:
     # Find and set the site_slug attribute based on the IP address
     def find_site_slug(self):
         # Check if the NetworkDevice IP address is in one of the IP ranges
+        found = False
         for site in NetworkDevice.sites:
-            if ipaddress.ip_address(self.ip_address) in site.ip_range:
-                self.site_slug = site.site_slug
+            for ip_range in site.ip_ranges:
+                if ipaddress.ip_address(self.ip_address) in ip_range:
+                    self.site_slug = site.site_slug
+                    found = True  # set flag to true as matching IP range is found
+                    break
+            if found:  # break the outer loop as well if matching IP range was found
                 break
         else:
             # Raise an error if the site is not found for the given IP address
@@ -227,8 +232,9 @@ def create_host(neighbor_device, neighbor_interface):
 
     # Не создавать хосты для ip из диапазона свичей
     is_ip_in_site_range = any(
-        ipaddress.ip_address(ip_address) in site.ip_range
+        ipaddress.ip_address(ip_address) in ip_range 
         for site in switch_network_device.sites
+        for ip_range in site.ip_ranges
     )
     if is_ip_in_site_range:
         NetboxDevice.set_description(
