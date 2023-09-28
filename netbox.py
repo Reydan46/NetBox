@@ -81,22 +81,59 @@ class NetboxDevice:
         netbox_interface.save()
 
     # Создаем экземпляр устройства netbox
-    def __init__(self, site_slug, model, role, hostname, serial_number=None, ip_address=None, vlans=None) -> None:
+    def __init__(self, site_slug, role, hostname, vlans, vm=False, model=None, serial_number=None, ip_address=None) -> None:
         self.hostname = hostname
         self.__site_slug = site_slug
         self.__model = model
         self.__role = role
         self.__serial_number = serial_number
         self.__vlans = vlans
-        self.__netbox_device = self.__get_netbox_device()
         self.__ip_address = ip_address
+        self.__vm = vm
+        
+        # Получение объекта сайта из NetBox
+        self.__netbox_site = self.netbox_connection.dcim.sites.get(
+            slug=self.__site_slug)
+        if not self.__netbox_site:
+            self.__critical_error_not_found("site", self.__site_slug)
+        # Получение объекта роли устройства из NetBox
+        self.__netbox_device_role = self.netbox_connection.dcim.device_roles.get(
+            name=self.__role)
+        if not self.__netbox_device_role:
+            self.__critical_error_not_found("device role", self.__role)
 
+        # Создание/получение устройства или ВМ
+        self.__netbox_device = self.__get_or_create_netbox_vm() if vm else self.__get_netbox_device()
+        
         # Выбор действия в зависимости от наличия или отсутствия устройства в NetBox
-        if not self.__netbox_device:
-            self.__create_device()
-        else:
-            self.__check_serial_number()
+        self.__create_device() if not self.__netbox_device else self.__check_serial_number()
 
+    def __get_or_create_netbox_vm(self):
+        self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.get(
+            name=self.hostname
+        )
+        if not self.__netbox_device:
+            logger.debug(
+                f'Virtual machine {self.__ip_address} not found in NetBox'
+            )
+            netbox_device = self.netbox_connection.dcim.devices.get(
+                name=self.__ip_address
+            )
+            if netbox_device:
+                raise Error(
+                    f'There is device with IP address {self.__ip_address} in NetBox'
+                )
+            logger.info(
+                f'Creating virtual machine {self.__ip_address} in NetBox...'
+            )
+            self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.create(
+                name=self.hostname,
+                site=self.__netbox_site.id,
+                role=self.__netbox_device_role.id,
+                status="active",
+            )
+        return self.__netbox_device
+    
     def __get_netbox_device(self):
         device = self.netbox_connection.dcim.devices.get(
             name=self.hostname, site=self.__site_slug)
@@ -109,27 +146,18 @@ class NetboxDevice:
             logger.debug(
                 f'Serial number {self.__netbox_device.serial} was changed to {self.__serial_number}', self.__ip_address)
 
-    def __create_device(self):
-        def critical_error_not_found(item_type, item_value):
-            error_msg = f"{item_type} {item_value} not found in NetBox."
-            raise Error(error_msg)
+    def __critical_error_not_found(item_type, item_value):
+        error_msg = f"{item_type} {item_value} not found in NetBox."
+        raise Error(error_msg)
 
+    def __create_device(self):
+        
         logger.debug("Creating device...")
 
         self.__netbox_device_type = self.netbox_connection.dcim.device_types.get(
             model=self.__model)
         if not self.__netbox_device_type:
-            critical_error_not_found("device type", self.__model)
-
-        self.__netbox_site = self.netbox_connection.dcim.sites.get(
-            slug=self.__site_slug)
-        if not self.__netbox_site:
-            critical_error_not_found("site", self.__site_slug)
-
-        self.__netbox_device_role = self.netbox_connection.dcim.device_roles.get(
-            name=self.__role)
-        if not self.__netbox_device_role:
-            critical_error_not_found("device role", self.__role)
+            self.__critical_error_not_found("device type", self.__model)
 
         # Создаем устройство в NetBox
         self.__netbox_device = self.netbox_connection.dcim.devices.create(
@@ -149,17 +177,30 @@ class NetboxDevice:
     def __get_netbox_interface(self, interface):
         logger.info(
             f"Checking if interface {interface.name} already exists in NetBox...")
-        existing_interface = self.netbox_connection.dcim.interfaces.get(
-            name=interface.name, device=self.__netbox_device.name
-        )
-
+        
+        if self.__vm:
+            existing_interface = self.netbox_connection.virtualization.interfaces.get(
+                name=interface.name, virtual_machine=self.__netbox_device.name
+            )
+        else:
+            existing_interface = self.netbox_connection.dcim.interfaces.get(
+                name=interface.name, device=self.__netbox_device.name
+            )
+        
         if not existing_interface and interface.type:
             logger.debug(f"Creating interface {interface.name}...")
-            existing_interface = self.netbox_connection.dcim.interfaces.create(
-                name=interface.name,
-                device=self.__netbox_device.id,
-                type=interface.type,
-            )
+            if self.__vm:
+                existing_interface = self.netbox_connection.virtualization.interfaces.create(
+                    name=interface.name,
+                    virtual_machine=self.__netbox_device.id,
+                    type=interface.type,
+                )
+            else:
+                existing_interface = self.netbox_connection.dcim.interfaces.create(
+                    name=interface.name,
+                    device=self.__netbox_device.id,
+                    type=interface.type,
+                )
         else:
             logger.debug(f"Interface {interface.name} already exists")
 
@@ -195,7 +236,10 @@ class NetboxDevice:
                 if existing_ip.address == interface.ip_with_prefix:
                     logger.debug(
                         f"IP address {interface.ip_with_prefix} already exists")
-                    existing_ip.assigned_object_type = "dcim.interface"
+                    if self.__vm:
+                        existing_ip.assigned_object_type = "virtualization.vminterface"
+                    else:
+                        existing_ip.assigned_object_type = "dcim.interface"
                     existing_ip.assigned_object_id = self.__netbox_interface.id
                     existing_ip.save()
                 else:
@@ -212,12 +256,20 @@ class NetboxDevice:
             def create_new_ip():
                 logger.debug(
                     f"Creating IP address {interface.ip_with_prefix}...")
-                return self.netbox_connection.ipam.ip_addresses.create(
-                    address=interface.ip_with_prefix,
-                    status="active",
-                    assigned_object_type="dcim.interface",
-                    assigned_object_id=self.__netbox_interface.id,
-                )
+                if self.__vm:
+                    return self.netbox_connection.ipam.ip_addresses.create(
+                        address=interface.ip_with_prefix,
+                        status="active",
+                        assigned_object_type="virtualization.vminterface",
+                        assigned_object_id=self.__netbox_interface.id,
+                    )
+                else:
+                    return self.netbox_connection.ipam.ip_addresses.create(
+                        address=interface.ip_with_prefix,
+                        status="active",
+                        assigned_object_type="dcim.interface",
+                        assigned_object_id=self.__netbox_interface.id,
+                    )
 
             logger.debug(
                 f"Checking if IP address {interface.ip_with_prefix} already exists in NetBox...")
@@ -334,36 +386,42 @@ class NetboxDevice:
                 recreate_cable()
 
 
-class NetboxVM(NetboxDevice):
-    def __init__(self, ip_address):
-        self.__ip_address = ip_address
-        self.__netbox_vm = self.__get_or_create_netbox_vm()
+# class NetboxVM(NetboxDevice):
+#     def __init__(self, ip_address, site_slug, hostname, role):
+#         self.__ip_address = ip_address
+#         self.hostname = hostname
+#         self.__netbox_site = self.netbox_connection.dcim.sites.get(slug=site_slug)
+#         self.__netbox_device_role = self.netbox_connection.dcim.device_roles.get(name=role)
+        
+#         self.__netbox_device = self.__get_or_create_netbox_vm()
 
-    def __get_or_create_netbox_vm(self):
-        self.__netbox_vm = self.netbox_connection.virtual_machines.get(
-            name=self.__ip_address
-        )
-        if not self.__netbox_vm:
-            logger.debug(
-                f'Virtual machine {self.ip_address} not found in NetBox'
-            )
-            netbox_device = self.netbox_connection.devices.get(
-                name=self.ip_address
-            )
-            if netbox_device:
-                raise Error(
-                    f'There is device with IP address {self.ip_address} in NetBox'
-                )
-        logger.info(
-            f'Creating virtual machine {self.ip_address} in NetBox...'
-        )
-        self.__netbox_vm = self.netbox_connection.virtual_machines.create(
-            name=self.__ip_address,
-            status='active',
-        )
-        return self.__netbox_vm
+#     def __get_or_create_netbox_vm(self):
+#         self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.get(
+#             name=self.hostname
+#         )
+#         if not self.__netbox_device:
+#             logger.debug(
+#                 f'Virtual machine {self.__ip_address} not found in NetBox'
+#             )
+#             netbox_device = self.netbox_connection.dcim.devices.get(
+#                 name=self.__ip_address
+#             )
+#             if netbox_device:
+#                 raise Error(
+#                     f'There is device with IP address {self.__ip_address} in NetBox'
+#                 )
+#             logger.info(
+#                 f'Creating virtual machine {self.__ip_address} in NetBox...'
+#             )
+#             self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.create(
+#                 name=self.hostname,
+#                 site=self.__netbox_site.id,
+#                 role=self.__netbox_device_role.id,
+#                 status="active",
+#             )
+#         return self.__netbox_device
 
 
-class NetboxService():
-    def __init__(self) -> None:
-        pass
+# class NetboxService():
+#     def __init__(self) -> None:
+#         pass

@@ -200,8 +200,8 @@ class SNMPDevice:
                         # Собираем результаты в список out
                         out += [output]
 
-            if len(out) == 0 and input_oid not in permissible_oids:
-                raise Error(f'{input_oid} вернул пустой список')
+            # if len(out) == 0 and input_oid not in permissible_oids:
+            #     raise Error(f'{input_oid} вернул пустой список')
 
             return out
 
@@ -274,9 +274,9 @@ class SNMPDevice:
                 ip_address=ip_addresses[i],
                 mask=masks[i],
                 index=index,
-                name=name[0],
-                MTU=MTU[0],
-                MAC=MAC[0],
+                name=name[0] if name else None,
+                MTU=MTU[0] if MTU else None,
+                MAC=MAC[0] if MAC else None,
                 type='virtual',
             )]
 

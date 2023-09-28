@@ -57,10 +57,11 @@ class NetworkDevice:
                 and str(subnet.network_address) not in ("0.0.0.0", "127.0.0.0")]
     # ====================================================================
 
-    def __init__(self, ip_address, role, community_string):
+    def __init__(self, ip_address, role, community_string, vm):
         self.ip_address: str = ip_address
         self.community_string: str = community_string
         self.role: str = role
+        self.vm: bool = vm
         self.arp_table = None
         self.physical_interfaces = []
 
@@ -307,6 +308,7 @@ if __name__ == '__main__':
                 ip_address=csv_device['ip device'].strip(),
                 role=csv_device['role'],
                 community_string=csv_device['community'] if csv_device['community'] else 'public',
+                vm=True if csv_device['vm'] else False,
             )
             # Получаем имя сайта по айпи опрашиваемого устройства
             switch_network_device.find_site_slug()
@@ -326,13 +328,13 @@ if __name__ == '__main__':
             # если device.csv не содержит значения role для устройства, то определяем role по hostname
             if not switch_network_device.role:
                 switch_network_device.get_role_from_hostname()
-            switch_network_device.model = snmp_device.get_model()  # получаем модель
+            if switch_network_device.vm is False:
+                switch_network_device.model = snmp_device.get_model()   # получаем модель
+                switch_network_device.model_family = snmp_device.find_model_family()    # получаем семейство моделей
             # получаем серийный номер
             switch_network_device.serial_number = snmp_device.get_serial_number()
             # получаем список виртуальных интерфейсов
             switch_network_device.virtual_interfaces = snmp_device.get_virtual_interfaces()
-            # получаем семейство моделей
-            switch_network_device.model_family = snmp_device.find_model_family()
             # получаем список физических интерфейсов
             switch_network_device.physical_interfaces = snmp_device.get_physical_interfaces()
             # проверяем наличие вланов устройства в netbox
@@ -342,20 +344,32 @@ if __name__ == '__main__':
             # пересоздание соединения с netbox на случай, если по snmp инфа собиралась слишком долго
             NetboxDevice.create_connection()
             # создаем экземпляр класса NetBoxDevice для взаимодействия с модулем NetBox
-            switch_netbox_device = NetboxDevice(
-                hostname=switch_network_device.hostname,
-                site_slug=switch_network_device.site_slug,
-                serial_number=switch_network_device.serial_number,
-                model=switch_network_device.model,
-                role=switch_network_device.role,
-                vlans=switch_network_device.netbox_vlans_objs,
-                ip_address=switch_network_device.ip_address,
-            )
+            if switch_network_device.vm:
+                switch_netbox_device = NetboxDevice(
+                    ip_address=switch_network_device.ip_address,
+                    site_slug=switch_network_device.site_slug,
+                    hostname=switch_network_device.hostname,
+                    role=switch_network_device.role,
+                    vm=switch_network_device.vm,
+                    vlans=switch_network_device.netbox_vlans_objs,
+                )
+            else:
+                switch_netbox_device = NetboxDevice(
+                    hostname=switch_network_device.hostname,
+                    site_slug=switch_network_device.site_slug,
+                    serial_number=switch_network_device.serial_number,
+                    model=switch_network_device.model,
+                    role=switch_network_device.role,
+                    vlans=switch_network_device.netbox_vlans_objs,
+                    ip_address=switch_network_device.ip_address,
+                    vm=switch_network_device.vm,
+                )
+            
             # создаем/обновляем интерфейсы в netbox
             for interface in switch_network_device.virtual_interfaces:
                 switch_netbox_device.add_interface(interface)
             
-            if switch_network_device.physical_interfaces:
+            if switch_network_device.physical_interfaces and not switch_network_device.vm:
                 for interface in switch_network_device.physical_interfaces:
                     interface.kind = 'interface'
                     switch_netbox_device.add_interface(interface)
