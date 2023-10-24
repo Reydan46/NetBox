@@ -146,7 +146,7 @@ class NetboxDevice:
             logger.debug(
                 f'Serial number {self.__netbox_device.serial} was changed to {self.__serial_number}', self.__ip_address)
 
-    def __critical_error_not_found(item_type, item_value):
+    def __critical_error_not_found(self, item_type, item_value):
         error_msg = f"{item_type} {item_value} not found in NetBox."
         raise Error(error_msg)
 
@@ -187,7 +187,9 @@ class NetboxDevice:
                 name=interface.name, device=self.__netbox_device.name
             )
         
-        if not existing_interface and interface.type:
+        if not existing_interface:
+            if not interface.type:
+                interface.type = "other"
             logger.debug(f"Creating interface {interface.name}...")
             if self.__vm:
                 existing_interface = self.netbox_connection.virtualization.interfaces.create(

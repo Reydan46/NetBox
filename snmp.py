@@ -229,23 +229,22 @@ class SNMPDevice:
 
     def get_model(self):
         logger.info('Getting model from SNMP...')
-        # Пробуем получить модель по основному oid
-        value = self.snmpwalk(oid.general.model)
-        if value:
-            re_out = re.search(
-                r'(\b[A-Z][A-Z0-9]{2,5}-[A-Z0-9]{1,4}-?[A-Z0-9\/]{1,5}\b)', value[0])
-            if re_out:
-                self.model = re_out.group(1)
-                return self.model
+        
+        model, model_alternative = oid.general.model, oid.general.alt_model 
+        regexp_primary, regexp_alternative = r'(\b[A-Z][A-Z0-9]{2,5}-[A-Z0-9]{1,4}-?[A-Z0-9\/]{1,5}\b)', r'MN:(\S+)'
 
-        # Пробуем получить модель по альтернативному oid
-        value = self.snmpwalk(oid.general.alt_model)
-        if value:
-            self.model = next((i for i in value if i), None)
-            if self.model:
-                return self.model
-
-        # Ни по одному oid модель не получена
+        for mod in [model, model_alternative]:
+            value = self.snmpwalk(mod)
+            if value:
+                for regex in [regexp_primary, regexp_alternative]:
+                    result = re.search(regex, value[0])
+                    if result:
+                        self.model = result.group(1)
+                        return self.model
+                if mod == model_alternative:
+                    self.model = next((i for i in value if i), None)
+                    if self.model: return self.model
+        
         raise Error("Model is undefined")
 
     def get_serial_number(self):
@@ -290,7 +289,7 @@ class SNMPDevice:
                 self.model_family = model_family
                 return self.model_family
 
-        NonCriticalError(f"{self.model} не найдена в models.list")
+        NonCriticalError(f"{self.model} не найдена в models.list", self.ip_address)
         return None
 
 #   БЛОК ПОЛУЧЕНИЯ ИНТЕРФЕЙСОВ
