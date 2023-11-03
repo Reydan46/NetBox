@@ -217,14 +217,15 @@ def create_host(neighbor_device, neighbor_interface):
     # Чекаем свойства интерфейса и принимаем решение о создании экземпляра для хоста
     ip_address = getattr(interface, 'rem_ip', None)
     if not ip_address:
-        if neighbor_interface.lldp_rem['name'] is not None and neighbor_interface.lldp_rem['port'] is not None:
-            NetboxDevice.set_description(
-                neighbor_device.hostname,
-                neighbor_interface.name,
-                neighbor_interface.lldp_rem['name'],
-                neighbor_interface.lldp_rem['port'],
-            )
-            return
+        if hasattr(neighbor_interface, 'lldp_rem'):
+            if neighbor_interface.lldp_rem['name'] is not None and neighbor_interface.lldp_rem['port'] is not None:
+                NetboxDevice.set_description(
+                    neighbor_device.hostname,
+                    neighbor_interface.name,
+                    neighbor_interface.lldp_rem['name'],
+                    neighbor_interface.lldp_rem['port'],
+                )
+                return
         return
     
     elif ip_address in host_exceptions_list:
@@ -291,6 +292,7 @@ if __name__ == '__main__':
     devices_reader, act = csv_reader()
     # Формируем pandas-базу розеток
     sockets = pd.read_csv('sockets.csv', sep=';', dtype=str)
+    sockets = sockets.applymap(lambda x: x.replace(' ', '') if isinstance(x, str) else x)
 
     # ГЛАВНЫЙ ЦИКЛ
     # ========================================================================
@@ -308,7 +310,7 @@ if __name__ == '__main__':
                 logger.info(f"Skipping {csv_device['ip device']}")
                 continue
 
-            logger.info(f"Processing {csv_device['ip device']}...\n")
+            logger.info(f"Processing {csv_device['ip device']}...")
             # Создаем экземпляр класса NetworkDevice, который служит "буфером" для информации между модулями
             switch_network_device = NetworkDevice(
                 ip_address=csv_device['ip device'].strip(),

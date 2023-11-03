@@ -1,4 +1,5 @@
 import inspect
+import ipaddress
 import os
 import traceback
 
@@ -80,8 +81,29 @@ class NetboxDevice:
         netbox_interface.description = f'-={neighbor_name}  {neighbor_interface}=-'
         netbox_interface.save()
 
+    @classmethod
+    def get_prefix_for_ip(cls, ip_addr):
+        for prefix in cls.netbox_connection.ipam.prefixes.all():
+            if ipaddress.ip_address(ip_addr) in ipaddress.ip_network(prefix):
+                return prefix
+        raise Error("IP address not found in NetBox prefixes", ip_addr)
+    
+    @classmethod
+    def create_ip_address(cls, ip, ip_with_prefix):
+        logger.debug(f'Checking if IP address {ip_with_prefix} exists...')
+        existing_ips = cls.netbox_connection.ipam.ip_addresses.filter(address=ip)
+        if existing_ips:
+            logger.info(
+                f'IP address {ip_with_prefix} already exists in NetBox (skipping creation)')
+            return
+        logger.info(f'Creating IP address {ip_with_prefix}...')
+        cls.netbox_connection.ipam.ip_addresses.create(
+            address=ip_with_prefix,
+            status='active',
+        )
+    
     # Создаем экземпляр устройства netbox
-    def __init__(self, site_slug, role, hostname, vlans, vm=False, model=None, serial_number=None, ip_address=None) -> None:
+    def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None) -> None:
         self.hostname = hostname
         self.__site_slug = site_slug
         self.__model = model

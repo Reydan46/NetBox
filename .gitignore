@@ -14,3 +14,5 @@ switches.csv
 host_exceptions.list
 sockets.csv
 NetBox.log.*
+utilities/NetBox.log
+utilities/dhcpd.leases

@@ -369,7 +369,9 @@ class SNMPDevice:
 
         for interface in interfaces:
             interface.name = int_name_dict[interface.index]
-            interface.mtu = mtu_dict.get(interface.index)
+            mtu_value = mtu_dict.get(interface.index)
+            if mtu_value is not None and int(mtu_value) >= 1:    # mtu должен быть больше 0
+                interface.mtu = mtu_value
             interface.status = status_dict[interface.index]
             interface.mac_address = mac_dict.get(interface.index)
             if interface.status == '1':
