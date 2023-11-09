@@ -16,3 +16,4 @@ sockets.csv
 NetBox.log.*
 utilities/NetBox.log
 utilities/dhcpd.leases
+.env

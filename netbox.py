@@ -58,17 +58,22 @@ class NetboxDevice:
             return None
 
     @classmethod
-    def get_netbox_ip(cls, ip_with_prefix):
+    def get_netbox_ip(cls, ip_with_prefix, create=True):
         logger.info(f'Getting IP object from NetBox...')
         netbox_ip = cls.netbox_connection.ipam.ip_addresses.get(
             address=ip_with_prefix,
         )
         if not netbox_ip:
-            logger.info(f'IP {ip_with_prefix} not found in NetBox. Creating...')
-            netbox_ip = cls.netbox_connection.ipam.ip_addresses.create(
-                address=ip_with_prefix,
-                status='active',
-            )
+            if create:
+                logger.info(f'IP {ip_with_prefix} not found in NetBox. Creating...')
+                netbox_ip = cls.netbox_connection.ipam.ip_addresses.create(
+                    address=ip_with_prefix,
+                    status='active',
+                )
+            else:
+                logger.info(f'IP {ip_with_prefix} not found in NetBox')
+                return None
+        
         parent_prefix = list(cls.netbox_connection.ipam.prefixes.filter(contains=ip_with_prefix))
         site_slug = parent_prefix[0].site.slug
         return netbox_ip, site_slug
@@ -102,6 +107,19 @@ class NetboxDevice:
             status='active',
         )
     
+    @classmethod
+    def get_roles(cls):
+        cls.roles = {
+            role.name: role for role in cls.netbox_connection.dcim.device_roles.all()
+        }
+        logger.debug("Roles retrieved from NetBox API")
+        
+    @classmethod
+    def get_vms_by_role(cls, role):
+        return cls.netbox_connection.virtualization.virtual_machines.filter(
+                role_id=role.id
+            )
+
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None) -> None:
         self.hostname = hostname
