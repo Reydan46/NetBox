@@ -1,0 +1,41 @@
+import os
+import sys
+
+current = os.path.dirname(os.path.realpath(__file__))
+parent = os.path.dirname(current)
+sys.path.append(parent)
+
+from log import logger
+from netbox import NetboxDevice
+from error_handling import print_errors
+from errors import Error, NonCriticalError
+
+
+class VM:
+    def __init__(self, name, ip):
+        self.name = name
+        self.ip = ip
+
+
+# `data` folder contains csv files with name start with `VMs_`. It neccessary to read them all
+csv_folder = "data"
+csv_files = [file for file in os.listdir(csv_folder) if file.startswith("VMs_")]
+for file in csv_files:
+    file_path = os.path.join(csv_folder, file)
+    with open(file_path, "r") as csv_file:
+        logger.info(f"Reading file: {file_path}")
+        csv_content = csv_file.DictReader(csv_file, delimiter=',')
+        for row in csv_content:
+            vm = VM(
+                site = row['Office'],
+                name = row['VMName'],
+                ip = row['IPAddress'],
+                fqdn = row['FQDN'],
+                user = row['User'],
+                access = row['Access'],
+                description = row['Description'],
+                os = row['OSVersion'],
+                os_last_update = row['OSLastUpdate'],
+                vmtools_version = row['VMwareToolsVersion'],
+                backup = row['Backup'],
+            )

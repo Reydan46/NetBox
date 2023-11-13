@@ -1,5 +1,4 @@
 import os
-import ipaddress
 
 import paramiko
 
@@ -7,7 +6,7 @@ from log import logger
 from errors import Error, NonCriticalError
 
 def download_config(device):
-    ip = ipaddress.ip_address(device.primary_ip)
+    ip = device.primary_ip.address.split('/')[0]
     port = 22
     try:
         logger.debug(f"Trying to connect to {ip}:{port}!")

@@ -9,6 +9,8 @@ def print_errors():
     # Flatten the list of dictionaries into a single dictionary
     merged_error_messages = {k: v for d in all_error_messages for k, v in d.items()}
 
+    logger.info(f'The work is completed')
+    
     # Print errors in a PrettyTable
     if merged_error_messages:
         table = PrettyTable(["IP", "Error"])
@@ -20,4 +22,4 @@ def print_errors():
         for ip, error_message in merged_error_messages.items():
             table.add_row([ip, error_message])
 
-        logger.info(f'The work is completed.\n{table}')
+        print(table)

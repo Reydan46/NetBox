@@ -292,7 +292,7 @@ if __name__ == '__main__':
     devices_reader, act = csv_reader()
     # Формируем pandas-базу розеток
     sockets = pd.read_csv('sockets.csv', sep=';', dtype=str)
-    sockets = sockets.applymap(lambda x: x.replace(' ', '') if isinstance(x, str) else x)
+    sockets = sockets.apply(lambda x: x.str.replace(' ', '') if x.dtype == 'object' else x)
 
     # ГЛАВНЫЙ ЦИКЛ
     # ========================================================================
@@ -385,7 +385,7 @@ if __name__ == '__main__':
                     # БЛОК РАБОТЫ С КОНЕЧНЫМИ УСТРОЙСТВАМИ
                     # Определяем номер порта
                     match = re.search(
-                        r"(?<!Po)\d+$", interface.name
+                        r"(?<![Po,Port\-channel])\d+$", interface.name
                     )
                     if match:
                         port_number = match.group()

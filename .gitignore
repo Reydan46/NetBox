@@ -17,3 +17,4 @@ NetBox.log.*
 utilities/NetBox.log
 utilities/dhcpd.leases
 .env
+data/VMs_*.csv

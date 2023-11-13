@@ -40,6 +40,7 @@ class NetboxDevice:
         except Exception as e:
             traceback.print_exc()
             raise e
+        cls.netbox_prefixes = list(cls.netbox_connection.ipam.prefixes.all())
 
     # Получение вланов сайта из netbox
     @classmethod
@@ -88,23 +89,30 @@ class NetboxDevice:
 
     @classmethod
     def get_prefix_for_ip(cls, ip_addr):
-        for prefix in cls.netbox_connection.ipam.prefixes.all():
+        for prefix in cls.netbox_prefixes:
             if ipaddress.ip_address(ip_addr) in ipaddress.ip_network(prefix):
                 return prefix
         raise Error("IP address not found in NetBox prefixes", ip_addr)
     
     @classmethod
-    def create_ip_address(cls, ip, ip_with_prefix):
+    def create_ip_address(cls, ip, ip_with_prefix, status='active', description=''):
         logger.debug(f'Checking if IP address {ip_with_prefix} exists...')
         existing_ips = cls.netbox_connection.ipam.ip_addresses.filter(address=ip)
         if existing_ips:
-            logger.info(
-                f'IP address {ip_with_prefix} already exists in NetBox (skipping creation)')
+            logger.debug(
+                f'IP address {ip_with_prefix} already exists in NetBox (skipping creation, update only)')
+            for existing_ip in existing_ips:
+                if existing_ip.description != description or existing_ip.status.value != status:
+                    logger.info(f'Updating IP address {ip_with_prefix}...')
+                    existing_ip.description = description
+                    existing_ip.status = status
+                    existing_ip.save()
             return
         logger.info(f'Creating IP address {ip_with_prefix}...')
         cls.netbox_connection.ipam.ip_addresses.create(
             address=ip_with_prefix,
-            status='active',
+            status=status,
+            description=description,
         )
     
     @classmethod
