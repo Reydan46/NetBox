@@ -21,8 +21,7 @@ class Lease:
         # Получение IP-адреса с указанием длины префикса
         self.ip_address = ip_address
         self.netbox_prefix = NetboxDevice.get_prefix_for_ip(ip_address)
-        self.ip_with_prefix = f'{
-            ip_address}/{self.netbox_prefix.prefix.split("/")[1]}'
+        self.ip_with_prefix = f'{ip_address}/{self.netbox_prefix.prefix.split("/")[1]}'
 
         # Определение статуса айпишника по времени отсутствия в сети
         self.age = self.__calculate_lease_age(start_date)

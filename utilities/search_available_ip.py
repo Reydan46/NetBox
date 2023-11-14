@@ -126,11 +126,10 @@ def fetch_desired_ip():
         return message
 
 
-network_isnot_found = True
-while network_isnot_found:
+while True:
     try:
         free_ip = main()
-        network_isnot_found = False
+        break
     except Error:
         continue
 while not free_ip:
