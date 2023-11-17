@@ -1,6 +1,7 @@
 import inspect
 import ipaddress
 import os
+import re
 import traceback
 
 import pynetbox
@@ -121,7 +122,7 @@ class NetboxDevice:
             role.name: role for role in cls.netbox_connection.dcim.device_roles.all()
         }
         logger.debug("Roles retrieved from NetBox API")
-        
+
     @classmethod
     def get_vms_by_role(cls, role):
         return cls.netbox_connection.virtualization.virtual_machines.filter(
@@ -129,7 +130,7 @@ class NetboxDevice:
             )
 
     # Создаем экземпляр устройства netbox
-    def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None) -> None:
+    def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster=None) -> None:
         self.hostname = hostname
         self.__site_slug = site_slug
         self.__model = model
@@ -138,6 +139,8 @@ class NetboxDevice:
         self.__vlans = vlans
         self.__ip_address = ip_address
         self.__vm = vm
+        self.__cluster = cluster
+        self.__netbox_device_role = None
         
         # Получение объекта сайта из NetBox
         self.__netbox_site = self.netbox_connection.dcim.sites.get(
@@ -145,9 +148,11 @@ class NetboxDevice:
         if not self.__netbox_site:
             self.__critical_error_not_found("site", self.__site_slug)
         # Получение объекта роли устройства из NetBox
-        self.__netbox_device_role = self.netbox_connection.dcim.device_roles.get(
-            name=self.__role)
-        if not self.__netbox_device_role:
+        if self.__role:
+            self.__netbox_device_role = self.netbox_connection.dcim.device_roles.get(
+                name=self.__role)
+        # Разрешить работу без роли для ВМ
+        if not self.__netbox_device_role and not self.__vm:
             self.__critical_error_not_found("device role", self.__role)
 
         # Создание/получение устройства или ВМ
@@ -177,8 +182,8 @@ class NetboxDevice:
             self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.create(
                 name=self.hostname,
                 site=self.__netbox_site.id,
-                role=self.__netbox_device_role.id,
                 status="active",
+                cluster=self.__cluster,
             )
         return self.__netbox_device
     
@@ -196,7 +201,7 @@ class NetboxDevice:
 
     def __critical_error_not_found(self, item_type, item_value):
         error_msg = f"{item_type} {item_value} not found in NetBox."
-        raise Error(error_msg)
+        raise Error(error_msg, self.__ip_address)
 
     def __create_device(self):
         
@@ -435,7 +440,23 @@ class NetboxDevice:
                 )
                 recreate_cable()
 
+    def get_platform(self, csv_os):
+        slug = self.__create_slug(csv_os)
+        self.__platform = self.netbox_connection.dcim.platforms.get(
+            slug=slug
+        )
+        if not self.__platform:
+            self.__platform = self.netbox_connection.dcim.platforms.create(
+                name=csv_os,
+                slug=slug,
+            )
+        self.__netbox_device.platform = self.__platform
+        self.__netbox_device.save()
 
+    # Creating URL-friendly unique shorthand
+    def __create_slug(self, name):
+        return re.sub(r'\W+', '-', name).lower()
+    
 # class NetboxVM(NetboxDevice):
 #     def __init__(self, ip_address, site_slug, hostname, role):
 #         self.__ip_address = ip_address
