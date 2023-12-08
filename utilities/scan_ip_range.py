@@ -79,8 +79,7 @@ def perform_network_scan(ip_ranges, scan_type, port=None, logfile=None):
 if __name__ == "__main__":
     # define the IP ranges to scan
     ip_ranges = {
-        '10.20.3.0/24': {'start_ip': '10.20.3.10', 'end_ip': '10.20.3.19'},
-        '10.10.3.0/24': {'start_ip': '10.10.3.10', 'end_ip': '10.10.3.19'},
+        '10.10.220.0/25': {'start_ip': '10.10.220.2', 'end_ip': '10.10.220.126'},
     }
 
     # parse the command-line arguments

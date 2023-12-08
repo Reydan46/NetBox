@@ -401,8 +401,11 @@ if __name__ == '__main__':
                             create_host(switch_netbox_device, interface)
 
         except Error as e:
-            e.store_error(csv_device['ip device'].strip(), e)
+            # e.store_error(csv_device['ip device'].strip(), e, True)
             # Error(e, csv_device['ip device'].strip())
+            continue
+        except Exception as e:
+            e.store_error(csv_device['ip device'].strip(), e, False)
             continue
         finally:
             if switch_network_device is not None:
@@ -411,20 +414,33 @@ if __name__ == '__main__':
 
     # ВЫВОД ОШИБОК
     # ========================================================================
-    # Merge the error messages into a single list
-    all_error_messages = Error.error_messages + NonCriticalError.error_messages
+    # Create tables for errors
+    critical_error_table = PrettyTable(["IP", "Error"])
+    critical_error_table.align["IP"] = "l"
+    critical_error_table.align["Error"] = "l"
+    critical_error_table.max_width = 75
+    critical_error_table.valign["Error"] = "t"
 
-    # Flatten the list of dictionaries into a single dictionary
-    merged_error_messages = {
-        k: v for d in all_error_messages for k, v in d.items()}
+    non_critical_error_table = PrettyTable(["IP", "Error"])
+    non_critical_error_table.align["IP"] = "l"
+    non_critical_error_table.align["Error"] = "l"
+    non_critical_error_table.max_width = 75
+    non_critical_error_table.valign["Error"] = "t"
 
-    # Print errors in a PrettyTable
-    if merged_error_messages:
-        table = PrettyTable(["IP", "Error"])
-        table.align["IP"] = "l"
-        table.align["Error"] = "l"
-        table.max_width = 75
-        table.valign["Error"] = "t"
-        for ip, error_message in merged_error_messages.items():
-            table.add_row([ip, error_message])
-        logger.info(f'The work is completed.\n{table}')
+    # Add rows to tables
+    for error in Error.error_messages:
+        if error['is_critical']:
+            critical_error_table.add_row([error["ip"], error["message"]])
+        else:
+            non_critical_error_table.add_row([error["ip"], error["message"]])
+
+    # Log the completion of work
+    logger.info('The work is completed.')
+    
+    # Print non-critical errors in PrettyTable if there are any
+    if not non_critical_error_table.get_string().strip() == "":
+        logger.info(f'Non-Critical Errors:\n{non_critical_error_table}')
+    
+    # Print errors in PrettyTable if there are any
+    if not critical_error_table.get_string().strip() == "":
+        logger.info(f'Critical Errors:\n{critical_error_table}')

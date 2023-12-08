@@ -9,11 +9,11 @@ class Error(Exception):
         if is_critical:
             print_red(f"CriticalError: {message}")
         if ip is not None:
-            self.store_error(ip, message)
+            self.store_error(ip, message, is_critical)
 
     @classmethod
-    def store_error(cls, ip, message):
-        cls.error_messages.append({ip: message})
+    def store_error(cls, ip, message, is_critical):
+        cls.error_messages.append({"ip": ip, "message": message, "is_critical": is_critical})
 
 
 class NonCriticalError(Error):

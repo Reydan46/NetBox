@@ -296,6 +296,7 @@ class NetboxDevice:
                     else:
                         existing_ip.assigned_object_type = "dcim.interface"
                     existing_ip.assigned_object_id = self.__netbox_interface.id
+                    existing_ip.status = "active"
                     existing_ip.save()
                 else:
                     # Удаляем ip в NetBox, если префикс не совпал
