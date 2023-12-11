@@ -405,7 +405,7 @@ if __name__ == '__main__':
             # Error(e, csv_device['ip device'].strip())
             continue
         except Exception as e:
-            e.store_error(csv_device['ip device'].strip(), e, False)
+            Error.store_error(csv_device['ip device'].strip(), e, True)
             continue
         finally:
             if switch_network_device is not None:

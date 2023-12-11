@@ -117,7 +117,7 @@ class SNMPDevice:
                     lambda re_out: re_out.group(1)
                 ),
                 'DotSplit': RegexAction(
-                    r'"([A-Za-z0-9\-_]+)(\.|\")',
+                    r'"([A-Za-z0-9\-_\-]+)(\\n)?\b',
                     lambda re_out: re_out.group(1)
                 ),
                 'IP': RegexAction(
