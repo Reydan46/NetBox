@@ -121,7 +121,7 @@ class NetworkDevice:
     # =====================================================================
 
     def get_role_from_hostname(self):
-        role_out = re.search(r'-([p]?sw)\d+', self.hostname)
+        role_out = re.search(r'-(\w*sw)-?\d+', self.hostname)
         role_mapping = {
             'psw': 'POE switch',
             'sw': 'Access switch',
