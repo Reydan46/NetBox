@@ -208,11 +208,9 @@ def csv_reader():
     devices_reader.__init__(devices_file, delimiter=";")
     return devices_reader, act
 
-
 def read_host_exceptions():
     with open('host_exceptions.list', 'r') as f:
         return [line.strip() for line in f.readlines()]
-
 
 def create_host(neighbor_device, neighbor_interface):
     # Чекаем свойства интерфейса и принимаем решение о создании экземпляра для хоста
