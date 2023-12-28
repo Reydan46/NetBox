@@ -1,2 +1,2 @@
-act;ip device;community;site slug;role
-;10.10.10.10;;ust;poe-switch
+act;ip device;community;site slug;role;vm;snmp
+;10.10.10.10;;ust;poe-switch;1

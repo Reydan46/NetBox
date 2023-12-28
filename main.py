@@ -57,12 +57,13 @@ class NetworkDevice:
                 and str(subnet.network_address) not in ("0.0.0.0", "127.0.0.0")]
     # ====================================================================
 
-    def __init__(self, ip_address, role, community_string, vm):
+    def __init__(self, ip_address, role, community_string, vm, snmp_version):
         self.ip_address: str = ip_address
         self.community_string: str = community_string
         self.role: str = role
         self.vm: bool = vm
         self.arp_table = None
+        self.snmp_version = snmp_version
         self.physical_interfaces = []
 
     # Временный для дебага - потом удалить
@@ -316,6 +317,7 @@ if __name__ == '__main__':
                 role=csv_device['role'],
                 community_string=csv_device['community'] if csv_device['community'] else 'public',
                 vm=True if csv_device['vm'] else False,
+                snmp_version=csv_device['snmp'] if csv_device['snmp'] else '2c',
             )
             # Получаем имя сайта по айпи опрашиваемого устройства
             switch_network_device.find_site_slug()
@@ -329,7 +331,8 @@ if __name__ == '__main__':
             snmp_device = SNMPDevice(
                 switch_network_device.ip_address,
                 switch_network_device.community_string,
-                switch_network_device.arp_table,
+                arp_table=switch_network_device.arp_table,
+                version=switch_network_device.snmp_version,
             )
             switch_network_device.hostname = snmp_device.get_hostname()  # получаем hostname
             # если device.csv не содержит значения role для устройства, то определяем role по hostname

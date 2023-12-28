@@ -64,11 +64,12 @@ class SNMPDevice:
 
         return cls.__indexes_to_dict(table_data)
 
-    def __init__(self, ip_address, community_string, arp_table=None):
+    def __init__(self, ip_address, community_string, arp_table=None, version='2c'):
         self.community_string = community_string
         self.ip_address = ip_address
         self.arp_table = arp_table
         self.model_family = None
+        self.version = version
 
         self.model_families = {
             "cisco_catalyst": self.find_interfaces_cisco_catalyst,
@@ -93,7 +94,7 @@ class SNMPDevice:
         ip_address = ip_address or self.ip_address
 
         try:
-            process = ["snmpwalk", "-Pe", "-v", "2c", "-c", community_string, "-Cc", f"-On{'x' if hex else ''}",
+            process = ["snmpwalk", "-Pe", "-v", f"{self.version}", "-c", community_string, "-Cc", f"-On{'x' if hex else ''}",
                        *([custom_option] if custom_option else []), ip_address, *([input_oid] if input_oid else [])]
 
             result = subprocess.run(
