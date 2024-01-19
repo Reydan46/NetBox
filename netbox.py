@@ -67,7 +67,8 @@ class NetboxDevice:
         )
         if not netbox_ip:
             if create:
-                logger.info(f'IP {ip_with_prefix} not found in NetBox. Creating...')
+                logger.info(
+                    f'IP {ip_with_prefix} not found in NetBox. Creating...')
                 netbox_ip = cls.netbox_connection.ipam.ip_addresses.create(
                     address=ip_with_prefix,
                     status='active',
@@ -75,17 +76,19 @@ class NetboxDevice:
             else:
                 logger.info(f'IP {ip_with_prefix} not found in NetBox')
                 return None
-        
-        parent_prefix = list(cls.netbox_connection.ipam.prefixes.filter(contains=ip_with_prefix))
+
+        parent_prefix = list(
+            cls.netbox_connection.ipam.prefixes.filter(contains=ip_with_prefix))
         site_slug = parent_prefix[0].site.slug
         return netbox_ip, site_slug
-    
+
     @classmethod
     def set_description(cls, device_name, interface_name, neighbor_name, neighbor_interface):
         netbox_interface = cls.netbox_connection.dcim.interfaces.get(
             name=interface_name, device=device_name
         )
-        netbox_interface.description = f'-={neighbor_name}  {neighbor_interface}=-'
+        netbox_interface.description = f'-={
+            neighbor_name}  {neighbor_interface}=-'
         netbox_interface.save()
 
     @classmethod
@@ -94,11 +97,12 @@ class NetboxDevice:
             if ipaddress.ip_address(ip_addr) in ipaddress.ip_network(prefix):
                 return prefix
         raise Error("IP address not found in NetBox prefixes", ip_addr)
-    
+
     @classmethod
     def create_ip_address(cls, ip, ip_with_prefix, status='active', description=''):
         logger.debug(f'Checking if IP address {ip_with_prefix} exists...')
-        existing_ips = cls.netbox_connection.ipam.ip_addresses.filter(address=ip)
+        existing_ips = cls.netbox_connection.ipam.ip_addresses.filter(
+            address=ip)
         if existing_ips:
             logger.debug(
                 f'IP address {ip_with_prefix} already exists in NetBox (skipping creation, update only)')
@@ -115,7 +119,7 @@ class NetboxDevice:
             status=status,
             description=description,
         )
-    
+
     @classmethod
     def get_roles(cls):
         cls.roles = {
@@ -126,8 +130,8 @@ class NetboxDevice:
     @classmethod
     def get_vms_by_role(cls, role):
         return cls.netbox_connection.virtualization.virtual_machines.filter(
-                role_id=role.id
-            )
+            role_id=role.id
+        )
 
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster=None) -> None:
@@ -141,7 +145,7 @@ class NetboxDevice:
         self.__vm = vm
         self.__cluster = cluster
         self.__netbox_device_role = None
-        
+
         # Получение объекта сайта из NetBox
         self.__netbox_site = self.netbox_connection.dcim.sites.get(
             slug=self.__site_slug)
@@ -156,8 +160,9 @@ class NetboxDevice:
             self.__critical_error_not_found("device role", self.__role)
 
         # Создание/получение устройства или ВМ
-        self.__netbox_device = self.__get_or_create_netbox_vm() if vm else self.__get_netbox_device()
-        
+        self.__netbox_device = self.__get_or_create_netbox_vm(
+        ) if vm else self.__get_netbox_device()
+
         # Выбор действия в зависимости от наличия или отсутствия устройства в NetBox
         self.__create_device() if not self.__netbox_device else self.__check_serial_number()
 
@@ -174,7 +179,8 @@ class NetboxDevice:
             )
             if netbox_device:
                 raise Error(
-                    f'There is device with IP address {self.__ip_address} in NetBox'
+                    f'There is device with IP address {
+                        self.__ip_address} in NetBox'
                 )
             logger.info(
                 f'Creating virtual machine {self.__ip_address} in NetBox...'
@@ -186,7 +192,7 @@ class NetboxDevice:
                 cluster=self.__cluster,
             )
         return self.__netbox_device
-    
+
     def __get_netbox_device(self):
         device = self.netbox_connection.dcim.devices.get(
             name=self.hostname, site=self.__site_slug)
@@ -204,7 +210,7 @@ class NetboxDevice:
         raise Error(error_msg, self.__ip_address)
 
     def __create_device(self):
-        
+
         logger.debug("Creating device...")
 
         self.__netbox_device_type = self.netbox_connection.dcim.device_types.get(
@@ -230,7 +236,7 @@ class NetboxDevice:
     def __get_netbox_interface(self, interface):
         logger.info(
             f"Checking if interface {interface.name} already exists in NetBox...")
-        
+
         if self.__vm:
             existing_interface = self.netbox_connection.virtualization.interfaces.get(
                 name=interface.name, virtual_machine=self.__netbox_device.name
@@ -239,7 +245,7 @@ class NetboxDevice:
             existing_interface = self.netbox_connection.dcim.interfaces.get(
                 name=interface.name, device=self.__netbox_device.name
             )
-        
+
         if not existing_interface:
             if not interface.type:
                 interface.type = "other"
@@ -265,7 +271,8 @@ class NetboxDevice:
         self.__get_netbox_interface(interface)
 
         if self.__netbox_interface:
-            update_fields = ['name', 'mtu', 'mac_address', "description", 'mode']
+            update_fields = ['name', 'mtu',
+                             'mac_address', "description", 'mode']
             for field in update_fields:
                 val = getattr(interface, field, None)
                 if val is not None:
@@ -348,7 +355,8 @@ class NetboxDevice:
                     self.__netbox_device.save()
 
         except pynetbox.core.query.RequestError as e:
-            error_message = f"Request failed for IP address {interface.ip_with_prefix}\n{e}"
+            error_message = f"Request failed for IP address {
+                interface.ip_with_prefix}\n{e}"
             calling_function = inspect.stack()[1].function
             NonCriticalError(
                 error_message, interface.ip_with_prefix, calling_function)
@@ -356,7 +364,67 @@ class NetboxDevice:
     def connect_to_neighbor(self, neighbor_device, interface):
         def recreate_cable():
             logger.debug(f'Deleting the cable...')
-            self.__netbox_interface.cable.delete()
+            # Если есть кабель со стороны хоста - удаляем
+            if self.__netbox_interface.cable:
+                self.__netbox_interface.cable.delete()
+            # Дествия с кабелем со стороны свича
+            if self.__neighbor_interface.cable:
+                # Проверить наличие конечного устройства за портом свича
+                if self.__neighbor_interface.connected_endpoints:
+                    # Проверить что IP адреса устройств принадлежат одной подсети
+                    self.local_device_prefix = NetboxDevice.get_prefix_for_ip(
+                        self.__ip_address
+                    )
+                    self.neighbor_device_prefix = NetboxDevice.get_prefix_for_ip(
+                        self.__neighbor_interface.connected_endpoints[0].device.name
+                    )
+                    if self.local_device_prefix == self.neighbor_device_prefix:
+                        logger.info(
+                            f'IP addresses {self.__ip_address} and {self.__neighbor_interface.connected_endpoints[0].device.name} belong to the same subnet. Deleting the cable...')
+                        # Сверка серийных номеров хостов
+                        old_neighbor = self.__neighbor_interface.link_peers[0].device
+                        netbox_old_neighbor = self.netbox_connection.dcim.devices.get(
+                            id=old_neighbor.id
+                        )
+                        # Если свич включен в хост
+                        if self.__neighbor_interface.link_peers_type == 'dcim.interface':
+                            # Если старый сосед имеет тот же серийный номер, то удаляем
+                            if netbox_old_neighbor.serial == self.__serial_number:
+                                    netbox_old_neighbor.delete()
+                                    logger.info(
+                                        f'Deleted the old device {old_neighbor.name} with serial number {self.__serial_number}'
+                                    )
+                            self.__neighbor_interface.cable.delete()
+                        # Если между старым хостом и свичём есть розетка
+                        elif self.__neighbor_interface.link_peers_type == 'dcim.rearport':
+                            netbox_old_neighbor_interface = self.netbox_connection.dcim.interfaces.get(
+                                id=self.__neighbor_interface.connected_endpoints[0].id
+                            )
+                            netbox_old_neighbor_interface.cable.delete()
+                            # Если старый сосед имеет тот же серийный номер, то удаляем
+                            if netbox_old_neighbor.serial == self.__serial_number:
+                                netbox_old_neighbor.delete()
+                                logger.info(
+                                    f'Deleted the old device {old_neighbor.hostname} with serial number {self.__serial_number}'
+                                )
+                            # Получить front_port соответствующий rear_port
+                            netbox_front_port = self.netbox_connection.dcim.front_ports.get(
+                                device_id=self.__neighbor_interface.link_peers[0].device.id,
+                            )
+                            self.__neighbor_interface = netbox_front_port
+                            interface.kind = 'frontport'
+                # Если конечного устройства нет
+                else:
+                    # Если кабель "висит" в воздухе - удаляем
+                    if not self.__neighbor_interface.link_peers:
+                        self.__neighbor_interface.cable.delete()
+                    else:
+                        # Получить front_port соответствующий rear_port
+                        netbox_front_port = self.netbox_connection.dcim.front_ports.get(
+                            device_id=self.__neighbor_interface.link_peers[0].device.id,
+                        )
+                        self.__neighbor_interface = netbox_front_port
+                        interface.kind = 'frontport'
             create_cable()
 
         def create_cable():
@@ -382,7 +450,8 @@ class NetboxDevice:
                 # If the cable is connected to another port, delete it and create a new one
                 if link_peer.id != self.__neighbor_interface.id:
                     NonCriticalError(
-                        f'Кабель включен в другой порт: ({link_peer.device} {link_peer})'
+                        f'Кабель включен в другой порт: ({link_peer.device} {
+                            link_peer})'
                     )
                     recreate_cable()
 
@@ -402,7 +471,7 @@ class NetboxDevice:
         logger.info(
             f"Checking if cable in {self.__netbox_interface.name} exists...")
         # Если интерфейса хоста нет кабеля - создаем кабель между интерфейсами свича и хостом
-        if not self.__netbox_interface.cable:
+        if not self.__netbox_interface.cable and not self.__neighbor_interface.cable:
             create_cable()
         # Если кабель существует, проверяем что он включен в соответсвующий порт свича
         else:
@@ -415,7 +484,8 @@ class NetboxDevice:
                     # Переключать свич или хост в розетку - можно
                     else:
                         logger.info(
-                            f'Переключаем устройство в розетку: ({self.__neighbor_interface.device} {self.__neighbor_interface})...'
+                            f'Переключаем устройство в розетку: ({self.__neighbor_interface.device} {
+                                self.__neighbor_interface})...'
                         )
                         recreate_cable()
                 # Если сейчас соседский интерфейс dcim.rearport
@@ -437,7 +507,8 @@ class NetboxDevice:
                                 recreate_cable()
             else:
                 logger.debug(
-                    f'Кабель не включен в соседнее устройство: ({self.__neighbor_interface.device} {self.__neighbor_interface})'
+                    f'Кабель не включен в соседнее устройство: ({self.__neighbor_interface.device} {
+                        self.__neighbor_interface})'
                 )
                 recreate_cable()
 
@@ -457,14 +528,14 @@ class NetboxDevice:
     # Creating URL-friendly unique shorthand
     def __create_slug(self, name):
         return re.sub(r'\W+', '-', name).lower()
-    
+
 # class NetboxVM(NetboxDevice):
 #     def __init__(self, ip_address, site_slug, hostname, role):
 #         self.__ip_address = ip_address
 #         self.hostname = hostname
 #         self.__netbox_site = self.netbox_connection.dcim.sites.get(slug=site_slug)
 #         self.__netbox_device_role = self.netbox_connection.dcim.device_roles.get(name=role)
-        
+
 #         self.__netbox_device = self.__get_or_create_netbox_vm()
 
 #     def __get_or_create_netbox_vm(self):

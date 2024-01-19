@@ -1,6 +1,8 @@
 import csv
 import ipaddress
 import re
+import argparse
+import logging
 
 import pandas as pd
 from prettytable import PrettyTable
@@ -286,6 +288,12 @@ def create_socket(interface, switch_network_device):
 #                               Тело скрипта
 # ========================================================================
 if __name__ == '__main__':
+    # Работа с аргументом командной строки
+    parser = argparse.ArgumentParser(description="Run the Network Device Script with a specified logging level.")
+    parser.add_argument('-l', '--loglevel', type=str.upper, choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"], default='INFO', help="Set the logging level (e.g. INFO, DEBUG)")
+    args = parser.parse_args()
+    logger.setLevel(getattr(logging, args.loglevel))
+    
     # Читаем csv файл со списком исключений для создания хостов
     host_exceptions_list = read_host_exceptions()
     # Читаем csv файл со списком устройств
