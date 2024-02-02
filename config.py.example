@@ -1,0 +1,28 @@
+# Email settings
+to_emails = ['admin@example.com']
+subject = 'Critical cable connection errors detected'
+smtp_host = 'smtp.example.com'
+from_email = 'noreply@example.com'
+files_to_attach = []
+
+# File paths
+switches_file = 'switches.csv'
+devices_file = 'devices.csv'
+sockets_file = 'sockets.csv'
+models_list_file = 'models.list'
+host_exceptions_file = 'host_exceptions.list'
+
+# SNMP and Network Settings
+default_snmp_community = 'public'
+default_snmp_version = '2c'
+
+# Regular Expressions and Role Mappings
+role_mapping = {
+    'psw': 'POE switch',
+    'sw': 'Access switch',
+    'isw': 'Industrial switch'
+}
+role_pattern = r'-(\w*sw)-?\d+'
+
+# Logging
+log_level = 'INFO'

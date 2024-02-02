@@ -13,6 +13,9 @@ from log import logger
 from netbox import NetboxDevice
 from snmp import SNMPDevice
 
+from config import *
+from custom_modules.mail_sender import send_email_with_attachment
+
 
 # ========================================================================
 #                                  Классы
@@ -31,7 +34,7 @@ class NetworkDevice:
 
     @classmethod
     def initialize_sites(cls):
-        with open('switches.csv') as f:
+        with open(switches_file) as f:
             reader = csv.DictReader(f, delimiter=';')
             for row in reader:
                 site = Site(row['site'], row['prefix'], row.get('gw', None))
@@ -124,12 +127,7 @@ class NetworkDevice:
     # =====================================================================
 
     def get_role_from_hostname(self):
-        role_out = re.search(r'-(\w*sw)-?\d+', self.hostname)
-        role_mapping = {
-            'psw': 'POE switch',
-            'sw': 'Access switch',
-            'isw': 'Industrial switch'
-        }
+        role_out = re.search(role_pattern, self.hostname)
         if role_out:
             self.role = role_mapping.get(role_out.group(1))
         else:
@@ -186,33 +184,56 @@ class HostInterface(Interface):
     def ip_in_subnet(ip, subnet):
         return ipaddress.ip_address(ip) in ipaddress.ip_network(subnet)
 
+
+class CableConnectionError:
+    def __init__(self, curr_device_name, curr_device_ip, switch, switch_interface, old_device_ip, netbox_url):
+        self.curr_device_name = curr_device_name
+        self.curr_device_ip = curr_device_ip
+        self.switch = switch
+        self.switch_interface = switch_interface
+        self.old_device_ip = old_device_ip
+        self.netbox_url = self.clean_url(netbox_url)
+
+    def __str__(self):
+        return (f"<p><strong>Коммутатор:</strong> {self.switch} {self.switch_interface}<br>"
+                f"<strong>Актуальное устройство:</strong> {self.curr_device_name} {self.curr_device_ip}<br>"
+                f"<strong>Предыдущие данные:</strong> {self.old_device_ip}"
+                f" <a href=\"{self.netbox_url}\">{self.netbox_url}</a></p>")
+
+    @staticmethod
+    def clean_url(netbox_url):
+        parts = netbox_url.split("/")
+        # Attempt to remove the 'api' part from the path
+        parts = [part for part in parts if part != "api"]
+        return "/".join(parts)
+
+
 # ========================================================================
 #                                 Функции
 # ========================================================================
-
-
 def csv_reader():
-    devices_file = open('devices.csv', newline='')
-    devices_reader = csv.DictReader(devices_file, delimiter=';')
-
+    csv_devices_list = []
+    with open(devices_file, newline='') as file:
+        devices_reader = csv.DictReader(file, delimiter=';')
+        for csv_device in devices_reader:
+            csv_devices_list.append(csv_device)
+    
     # Читаем столбец действия (act)
     # "+" - работать только с этим хостом
     # "-" - исключить хост из обработки
     # Note: "плюсы" имеют приоритет перед "минусами"
     act = 'all'
-    for csv_device in devices_reader:
+    for csv_device in csv_devices_list:
         if csv_device['act'] == '+':
             act = 'include'
             break
         elif csv_device['act'] == '-':
             act = 'exclude'
-    # Возврат в начало файла
-    devices_file.seek(0)
-    devices_reader.__init__(devices_file, delimiter=";")
-    return devices_reader, act
+    
+    return csv_devices_list, act
 
 def read_host_exceptions():
-    with open('host_exceptions.list', 'r') as f:
+    with open(host_exceptions_file, 'r') as f:
         return [line.strip() for line in f.readlines()]
 
 def create_host(neighbor_device, neighbor_interface):
@@ -288,18 +309,14 @@ def create_socket(interface, switch_network_device):
 #                               Тело скрипта
 # ========================================================================
 if __name__ == '__main__':
-    # Работа с аргументом командной строки
-    parser = argparse.ArgumentParser(description="Run the Network Device Script with a specified logging level.")
-    parser.add_argument('-l', '--loglevel', type=str.upper, choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"], default='INFO', help="Set the logging level (e.g. INFO, DEBUG)")
-    args = parser.parse_args()
-    logger.setLevel(getattr(logging, args.loglevel))
-    
+    # Устанавливаем уровень логирования
+    logger.setLevel(getattr(logging, log_level))
     # Читаем csv файл со списком исключений для создания хостов
     host_exceptions_list = read_host_exceptions()
     # Читаем csv файл со списком устройств
     devices_reader, act = csv_reader()
     # Формируем pandas-базу розеток
-    sockets = pd.read_csv('sockets.csv', sep=';', dtype=str)
+    sockets = pd.read_csv(sockets_file, sep=';', dtype=str)
     sockets = sockets.apply(lambda x: x.str.replace(' ', '') if x.dtype == 'object' else x)
 
     # ГЛАВНЫЙ ЦИКЛ
@@ -307,7 +324,7 @@ if __name__ == '__main__':
     NetboxDevice.create_connection()
     NetworkDevice.initialize_sites()  # Получаем словарь сайтов из switches.csv
     # загружаем словарь моделей по семействам
-    SNMPDevice.load_models('models.list')
+    SNMPDevice.load_models(models_list_file)
 
     for csv_device in devices_reader:
         switch_network_device = None
@@ -323,9 +340,9 @@ if __name__ == '__main__':
             switch_network_device = NetworkDevice(
                 ip_address=csv_device['ip device'].strip(),
                 role=csv_device['role'],
-                community_string=csv_device['community'] if csv_device['community'] else 'public',
+                community_string=csv_device['community'] if csv_device['community'] else default_snmp_community,
                 vm=True if csv_device['vm'] else False,
-                snmp_version=csv_device['snmp'] if csv_device['snmp'] else '2c',
+                snmp_version=csv_device['snmp'] if csv_device['snmp'] else default_snmp_version,
             )
             # Получаем имя сайта по айпи опрашиваемого устройства
             switch_network_device.find_site_slug()
@@ -438,9 +455,23 @@ if __name__ == '__main__':
     non_critical_error_table.valign["Error"] = "t"
 
     # Add rows to tables
+    cable_connection_errors = []
     for error in Error.error_messages:
         if error['is_critical']:
             critical_error_table.add_row([error["ip"], error["message"]])
+            if "Can't connect " in error['message']:
+                pattern = r"Can't connect (\S+) (\S+) to (\S+) (\S+)\nSwitch interface was connected to (\S+)\n(\S+)"
+                match = re.match(pattern, error['message'])
+                if match:
+                    cable_error_detail = CableConnectionError(
+                        curr_device_name=match.group(1),
+                        curr_device_ip=match.group(2),
+                        switch=match.group(3),
+                        switch_interface=match.group(4),
+                        old_device_ip=match.group(5),
+                        netbox_url=match.group(6)
+                    )
+                    cable_connection_errors.append(cable_error_detail)
         else:
             non_critical_error_table.add_row([error["ip"], error["message"]])
 
@@ -454,3 +485,37 @@ if __name__ == '__main__':
     # Print errors in PrettyTable if there are any
     if not critical_error_table.get_string().strip() == "":
         logger.info(f'Critical Errors:\n{critical_error_table}')
+    
+    if cable_connection_errors:
+        # Generate the body of the email
+        # Starting HTML body
+        body_text = """
+        <html>
+        <head>
+        <style>
+        p { font-family: Arial, sans-serif; font-size: 12pt; }
+        </style>
+        </head>
+        <body>
+        <p><h3>Зафиксированы следующие смены IP за портом без смены mac-адреса:</h3></p>
+        """
+        for error_detail in cable_connection_errors:
+            body_text += str(error_detail)
+        # Close the HTML body
+        body_text += """
+        </body>
+        </html>
+        """
+        # Create a list of files to attach
+        files_to_attach = []
+
+        # Send email
+        send_email_with_attachment(
+            host=smtp_host,
+            from_addr=from_email,
+            to_emails=infosec_team_mail,
+            cc_emails=me_mail,
+            subject=subject,
+            body_text=body_text,
+            files_to_attach=files_to_attach
+        )

@@ -87,8 +87,7 @@ class NetboxDevice:
         netbox_interface = cls.netbox_connection.dcim.interfaces.get(
             name=interface_name, device=device_name
         )
-        netbox_interface.description = f'-={
-            neighbor_name}  {neighbor_interface}=-'
+        netbox_interface.description = f'-={neighbor_name}  {neighbor_interface}=-'
         netbox_interface.save()
 
     @classmethod
@@ -179,8 +178,7 @@ class NetboxDevice:
             )
             if netbox_device:
                 raise Error(
-                    f'There is device with IP address {
-                        self.__ip_address} in NetBox'
+                    f'There is device with IP address {self.__ip_address} in NetBox'
                 )
             logger.info(
                 f'Creating virtual machine {self.__ip_address} in NetBox...'
@@ -355,8 +353,7 @@ class NetboxDevice:
                     self.__netbox_device.save()
 
         except pynetbox.core.query.RequestError as e:
-            error_message = f"Request failed for IP address {
-                interface.ip_with_prefix}\n{e}"
+            error_message = f"Request failed for IP address {interface.ip_with_prefix}\n{e}"
             calling_function = inspect.stack()[1].function
             NonCriticalError(
                 error_message, interface.ip_with_prefix, calling_function)
@@ -443,15 +440,14 @@ class NetboxDevice:
                 logger.debug(f'The cable has been created')
             except Exception as e:
                 Error(
-                    f'Cable connection to {neighbor_device.hostname} {self.__neighbor_interface.name} failed.\n{e}', self.__ip_address)
+                    f"Can't connect {interface.lldp_rem['name']} {interface.rem_ip} to {neighbor_device.hostname} {self.__neighbor_interface.name}\nSwitch interface was connected to {self.__neighbor_interface.connected_endpoints[0].device}\n{self.__neighbor_interface.connected_endpoints[0].device.url}", self.__ip_address)
 
         def check_and_recreate_cable_if_needed():
             for link_peer in self.__netbox_interface.link_peers:
                 # If the cable is connected to another port, delete it and create a new one
                 if link_peer.id != self.__neighbor_interface.id:
                     NonCriticalError(
-                        f'Кабель включен в другой порт: ({link_peer.device} {
-                            link_peer})'
+                        f'Кабель включен в другой порт: ({link_peer.device} {link_peer})'
                     )
                     recreate_cable()
 
@@ -484,8 +480,7 @@ class NetboxDevice:
                     # Переключать свич или хост в розетку - можно
                     else:
                         logger.info(
-                            f'Переключаем устройство в розетку: ({self.__neighbor_interface.device} {
-                                self.__neighbor_interface})...'
+                            f'Переключаем устройство в розетку: ({self.__neighbor_interface.device} {self.__neighbor_interface})...'
                         )
                         recreate_cable()
                 # Если сейчас соседский интерфейс dcim.rearport
@@ -507,8 +502,7 @@ class NetboxDevice:
                                 recreate_cable()
             else:
                 logger.debug(
-                    f'Кабель не включен в соседнее устройство: ({self.__neighbor_interface.device} {
-                        self.__neighbor_interface})'
+                    f'Кабель не включен в соседнее устройство: ({self.__neighbor_interface.device} {self.__neighbor_interface})'
                 )
                 recreate_cable()
 
