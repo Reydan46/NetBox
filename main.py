@@ -49,10 +49,14 @@ class NetworkDevice:
         if not site.gw:
             return
         # Получаем arp-таблицу с марша площадки
-        site.arp_table = SNMPDevice.get_network_table(
-            site.gw, oid.general.arp_mac, 'IP-MAC')
-        site.subnets = cls.get_subnets(SNMPDevice.get_network_table(
-            site.gw, oid.general.ip_mask, 'IP-MASK'))  # Получаем таблицу подсетей площадки
+        try:
+            site.arp_table = SNMPDevice.get_network_table(
+                site.gw, oid.general.arp_mac, 'IP-MAC')
+            site.subnets = cls.get_subnets(SNMPDevice.get_network_table(
+                site.gw, oid.general.ip_mask, 'IP-MASK'))  # Получаем таблицу подсетей площадки
+        except Error as e:
+            site.GW = None
+            return
 
     @staticmethod
     def get_subnets(ip_table):
