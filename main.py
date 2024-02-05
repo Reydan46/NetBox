@@ -21,10 +21,56 @@ from custom_modules.mail_sender import send_email_with_attachment
 #                                  Классы
 # ========================================================================
 class Site:
+    @classmethod
+    def get_all_ips(cls):
+        cls.netbox_ips_all = list(NetboxDevice.get_netbox_objects(
+            'ipam.ip_addresses',
+            action='all',
+        ))
+        logger.info(f'{len(cls.netbox_ips_all)} IPs retrieved from NetBox')
+    
+    @staticmethod
+    def convert_networks(subnets_list):
+        return [ipaddress.ip_network(subnet) for subnet in subnets_list]
+    
     def __init__(self, site_slug, prefix, gw=None):
         self.site_slug = site_slug
         self.ip_ranges = [ipaddress.ip_network(x.strip(), strict=False) for x in prefix.split(',')]
         self.gw = gw
+
+    def check_mac_persistence(self):
+        # Function to check if a MAC address is known
+        def is_mac_known(mac):
+            with open(known_macs_filename, 'r') as file:
+                known_macs = file.read().splitlines()
+            return mac in known_macs
+
+        # Function to add a MAC address to the known list
+        def add_mac_to_known(mac):
+            with open(known_macs_filename, 'a') as file:
+                file.write(mac + '\n')
+
+        if hasattr(self, 'arp_table'):
+            # Loop through arp_table items
+            for key, value in self.arp_table.items():
+                key_ip = ipaddress.ip_address(key)  # Convert the key to an IP address object for comparison
+                # Check if the MAC address is already known
+                if is_mac_known(value):
+                    logger.debug(f'MAC: {value} is already known. Skipping...')
+                    continue  # Skip further checks for this MAC address
+
+                if any(key_ip in subnet for subnet in self.convert_networks(protected_networks)):
+                    mac_found = False
+                    mac_for_notification = MacNotification(key, value)
+                    for netbox_ip in self.netbox_ips_all:
+                        if value.lower() in netbox_ip.description:
+                            mac_found = True
+                            mac_for_notification.url = clean_url(netbox_ip.url)
+                            logger.debug(f'{mac_for_notification.url}')
+                    if not mac_found:
+                        logger.debug(f'Value: {value} NOT found in Netbox IP Description.')
+                    mac_for_notification_list.append(mac_for_notification)
+                    add_mac_to_known(value)
 
 
 class NetworkDevice:
@@ -36,10 +82,12 @@ class NetworkDevice:
     def initialize_sites(cls):
         with open(switches_file) as f:
             reader = csv.DictReader(f, delimiter=';')
+            Site.get_all_ips()
             for row in reader:
                 site = Site(row['site'], row['prefix'], row.get('gw', None))
                 # Заполнение экземпляра сайта данными
                 cls.__populate_site_data(site)
+                site.check_mac_persistence()
                 cls.sites.append(site)
             logger.info('-' * 40)
 
@@ -190,13 +238,24 @@ class HostInterface(Interface):
 
 
 class CableConnectionError:
+    body_text = """
+        <html>
+        <head>
+        <style>
+        p { font-family: Arial, sans-serif; font-size: 12pt; }
+        </style>
+        </head>
+        <body>
+        <p><h3>Зафиксированы следующие смены IP за портом без смены mac-адреса:</h3></p>
+        """
+    
     def __init__(self, curr_device_name, curr_device_ip, switch, switch_interface, old_device_ip, netbox_url):
         self.curr_device_name = curr_device_name
         self.curr_device_ip = curr_device_ip
         self.switch = switch
         self.switch_interface = switch_interface
         self.old_device_ip = old_device_ip
-        self.netbox_url = self.clean_url(netbox_url)
+        self.netbox_url = clean_url(netbox_url)
 
     def __str__(self):
         return (f"<p><strong>Коммутатор:</strong> {self.switch} {self.switch_interface}<br>"
@@ -204,12 +263,26 @@ class CableConnectionError:
                 f"<strong>Предыдущие данные:</strong> {self.old_device_ip}"
                 f" <a href=\"{self.netbox_url}\">{self.netbox_url}</a></p>")
 
-    @staticmethod
-    def clean_url(netbox_url):
-        parts = netbox_url.split("/")
-        # Attempt to remove the 'api' part from the path
-        parts = [part for part in parts if part != "api"]
-        return "/".join(parts)
+
+class MacNotification:
+    body_text = """
+        <html>
+        <head>
+        <style>
+        p { font-family: Arial, sans-serif; font-size: 12pt; }
+        </style>
+        </head>
+        <body>
+        <p><h3>Зафиксированы следующие MAC-адреса:</h3></p>
+        """
+    
+    def __init__(self, ip, mac):
+        self.ip = ip
+        self.mac = mac
+        self.url = None
+    
+    def __str__(self) -> str:
+        return f"<p><strong>MAC:</strong> {self.mac}<br><strong>IP:</strong> {self.ip}<br><a href=\"{self.url}\">{self.url}</a></p>"
 
 
 # ========================================================================
@@ -308,11 +381,23 @@ def create_socket(interface, switch_network_device):
 
     return socket_netbox_device, frontport
 
+def clean_url(netbox_url):
+    parts = netbox_url.split("/")
+    # Attempt to remove the 'api' part from the path
+    parts = [part for part in parts if part != "api"]
+    return "/".join(parts)
+
 
 # ========================================================================
 #                               Тело скрипта
 # ========================================================================
 if __name__ == '__main__':
+    # Define an argument parser and an argument to control mail sending
+    parser = argparse.ArgumentParser(description='Network Device Processing Script')
+    parser.add_argument('--no-mail', action='store_true',
+                        help='Do not send email notifications after processing')
+    args = parser.parse_args()
+    
     # Устанавливаем уровень логирования
     logger.setLevel(getattr(logging, log_level))
     # Читаем csv файл со списком исключений для создания хостов
@@ -322,6 +407,8 @@ if __name__ == '__main__':
     # Формируем pandas-базу розеток
     sockets = pd.read_csv(sockets_file, sep=';', dtype=str)
     sockets = sockets.apply(lambda x: x.str.replace(' ', '') if x.dtype == 'object' else x)
+    # Список MAC-ов для уведомления
+    mac_for_notification_list = []
 
     # ГЛАВНЫЙ ЦИКЛ
     # ========================================================================
@@ -490,36 +577,46 @@ if __name__ == '__main__':
     if not critical_error_table.get_string().strip() == "":
         logger.info(f'Critical Errors:\n{critical_error_table}')
     
-    if cable_connection_errors:
-        # Generate the body of the email
-        # Starting HTML body
-        body_text = """
-        <html>
-        <head>
-        <style>
-        p { font-family: Arial, sans-serif; font-size: 12pt; }
-        </style>
-        </head>
-        <body>
-        <p><h3>Зафиксированы следующие смены IP за портом без смены mac-адреса:</h3></p>
-        """
-        for error_detail in cable_connection_errors:
-            body_text += str(error_detail)
-        # Close the HTML body
-        body_text += """
-        </body>
-        </html>
-        """
-        # Create a list of files to attach
-        files_to_attach = []
+    # Send email notifications
+    if not args.no_mail:
+        if cable_connection_errors:
+            # Generate the body of the email
+            # Starting HTML body
+            for error_detail in cable_connection_errors:
+                CableConnectionError.body_text += str(error_detail)
+            # Close the HTML body
+            CableConnectionError.body_text += """
+            </body>
+            </html>
+            """
+            # Create a list of files to attach
+            files_to_attach = []
 
-        # Send email
-        send_email_with_attachment(
-            host=smtp_host,
-            from_addr=from_email,
-            to_emails=infosec_team_mail,
-            cc_emails=me_mail,
-            subject=subject,
-            body_text=body_text,
-            files_to_attach=files_to_attach
-        )
+            # Send email
+            send_email_with_attachment(
+                host=smtp_host,
+                from_addr=from_email,
+                to_emails=infosec_team_mail,
+                cc_emails=me_mail,
+                subject='Смена IP за портом detected',
+                body_text=CableConnectionError.body_text,
+            )
+        else:
+            logger.info("No Cable Connection Errors")
+        
+        if mac_for_notification_list:
+            for mac in mac_for_notification_list:
+                MacNotification.body_text += str(mac)
+            MacNotification.body_text += """
+            </body>
+            </html>
+            """
+            send_email_with_attachment(
+                host=smtp_host,
+                from_addr=from_email,
+                to_emails=me_mail,
+                subject='Новый мак в защищенной сети',
+                body_text=MacNotification.body_text,
+            )
+        else:
+            logger.info("No MAC Notification")

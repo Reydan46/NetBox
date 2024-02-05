@@ -132,6 +132,22 @@ class NetboxDevice:
             role_id=role.id
         )
 
+    @classmethod
+    def get_netbox_objects(cls, *path_segments, action=None, **search_params):
+        netbox_api = cls.netbox_connection
+        # Flatten out dot-delimited string segments into individual segments
+        segments = []
+        for segment in path_segments:
+            segments.extend(segment.split('.'))
+        # Traverse the pynetbox API segments
+        for segment in segments:
+            netbox_api = getattr(netbox_api, segment)
+        if action:
+            method = getattr(netbox_api, action)
+            return method(**search_params)
+        else:
+            raise ValueError("Action (e.g., 'get', 'filter') must be specified.")
+    
     # Создаем экземпляр устройства netbox
     def __init__(self, site_slug, role, hostname, vlans=None, vm=False, model=None, serial_number=None, ip_address=None, cluster=None) -> None:
         self.hostname = hostname
