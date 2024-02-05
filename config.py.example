@@ -1,9 +1,7 @@
 # Email settings
 to_emails = ['admin@example.com']
-subject = 'Critical cable connection errors detected'
 smtp_host = 'smtp.example.com'
 from_email = 'noreply@example.com'
-files_to_attach = []
 
 # File paths
 switches_file = 'switches.csv'
@@ -26,3 +24,5 @@ role_pattern = r'-(\w*sw)-?\d+'
 
 # Logging
 log_level = 'INFO'
+
+protected_networks = []
