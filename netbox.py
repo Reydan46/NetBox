@@ -109,7 +109,6 @@ class NetboxDevice:
                 if existing_ip.description != description or existing_ip.status.value != status:
                     logger.info(f'Updating IP address {ip_with_prefix}...')
                     existing_ip.description = description
-                    existing_ip.status = status
                     existing_ip.save()
             return
         logger.info(f'Creating IP address {ip_with_prefix}...')

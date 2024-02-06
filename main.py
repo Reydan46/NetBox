@@ -69,6 +69,9 @@ class Site:
                             logger.debug(f'{mac_for_notification.url}')
                     if not mac_found:
                         logger.debug(f'Value: {value} NOT found in Netbox IP Description.')
+                        netbox_prefix = NetboxDevice.get_prefix_for_ip(key)
+                        ip_with_prefix = f'{key}/{str(netbox_prefix).split("/")[-1]}'
+                        NetboxDevice.create_ip_address(key, ip_with_prefix, description=value)
                     mac_for_notification_list.append(mac_for_notification)
                     add_mac_to_known(value)
 
