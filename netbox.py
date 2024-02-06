@@ -110,13 +110,15 @@ class NetboxDevice:
                     logger.info(f'Updating IP address {ip_with_prefix}...')
                     existing_ip.description = description
                     existing_ip.save()
+                    return existing_ip
             return
         logger.info(f'Creating IP address {ip_with_prefix}...')
-        cls.netbox_connection.ipam.ip_addresses.create(
+        created_ip = cls.netbox_connection.ipam.ip_addresses.create(
             address=ip_with_prefix,
             status=status,
             description=description,
         )
+        return created_ip
 
     @classmethod
     def get_roles(cls):

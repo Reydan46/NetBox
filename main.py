@@ -63,15 +63,16 @@ class Site:
                     mac_found = False
                     mac_for_notification = MacNotification(key, value)
                     for netbox_ip in self.netbox_ips_all:
-                        if value.lower() in netbox_ip.description:
+                        if value.lower() in netbox_ip.description.lower():
                             mac_found = True
-                            mac_for_notification.url = clean_url(netbox_ip.url)
-                            logger.debug(f'{mac_for_notification.url}')
+                            mac_for_notification.urls.append(clean_url(netbox_ip.url))  # Add URL to the list
+                            logger.debug(f'{clean_url(netbox_ip.url)}')
                     if not mac_found:
                         logger.debug(f'Value: {value} NOT found in Netbox IP Description.')
                         netbox_prefix = NetboxDevice.get_prefix_for_ip(key)
                         ip_with_prefix = f'{key}/{str(netbox_prefix).split("/")[-1]}'
-                        NetboxDevice.create_ip_address(key, ip_with_prefix, description=value)
+                        created_ip = NetboxDevice.create_ip_address(key, ip_with_prefix, description=value)
+                        mac_for_notification.urls.append(clean_url(created_ip.url))  # Add URL to the list
                     mac_for_notification_list.append(mac_for_notification)
                     add_mac_to_known(value)
 
@@ -249,7 +250,7 @@ class CableConnectionError:
         </style>
         </head>
         <body>
-        <p><h3>Зафиксированы следующие смены IP за портом без смены mac-адреса:</h3></p>
+        <p><h3>Зафиксированы следующие смены IP за портом:</h3></p>
         """
     
     def __init__(self, curr_device_name, curr_device_ip, switch, switch_interface, old_device_ip, netbox_url):
@@ -278,14 +279,15 @@ class MacNotification:
         <body>
         <p><h3>Зафиксированы следующие MAC-адреса:</h3></p>
         """
-    
+
     def __init__(self, ip, mac):
         self.ip = ip
         self.mac = mac
-        self.url = None
-    
+        self.urls = []
+
     def __str__(self) -> str:
-        return f"<p><strong>MAC:</strong> {self.mac}<br><strong>IP:</strong> {self.ip}<br><a href=\"{self.url}\">{self.url}</a></p>"
+        urls_str = '<br>'.join([f'<a href="{url}">{url}</a>' for url in self.urls])
+        return f"<p><strong>MAC:</strong> {self.mac}<br><strong>IP:</strong> {self.ip}<br>{urls_str}</p>"
 
 
 # ========================================================================
