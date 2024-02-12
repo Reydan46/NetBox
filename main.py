@@ -555,19 +555,22 @@ if __name__ == '__main__':
     for error in Error.error_messages:
         if error['is_critical']:
             critical_error_table.add_row([error["ip"], error["message"]])
-            if "Can't connect " in error['message']:
-                pattern = r"Can't connect (\S+) (\S+) to (\S+) (\S+)\nSwitch interface was connected to (\S+)\n(\S+)"
-                match = re.match(pattern, error['message'])
-                if match:
-                    cable_error_detail = CableConnectionError(
-                        curr_device_name=match.group(1),
-                        curr_device_ip=match.group(2),
-                        switch=match.group(3),
-                        switch_interface=match.group(4),
-                        old_device_ip=match.group(5),
-                        netbox_url=match.group(6)
-                    )
-                    cable_connection_errors.append(cable_error_detail)
+            try:
+                if "Can't connect " in error['message']:
+                    pattern = r"Can't connect (\S+) (\S+) to (\S+) (\S+)\nSwitch interface was connected to (\S+)\n(\S+)"
+                    match = re.match(pattern, error['message'])
+                    if match:
+                        cable_error_detail = CableConnectionError(
+                            curr_device_name=match.group(1),
+                            curr_device_ip=match.group(2),
+                            switch=match.group(3),
+                            switch_interface=match.group(4),
+                            old_device_ip=match.group(5),
+                            netbox_url=match.group(6)
+                        )
+                        cable_connection_errors.append(cable_error_detail)
+            except Exception as e:
+                continue
         else:
             non_critical_error_table.add_row([error["ip"], error["message"]])
 
@@ -619,7 +622,8 @@ if __name__ == '__main__':
             send_email_with_attachment(
                 host=smtp_host,
                 from_addr=from_email,
-                to_emails=me_mail,
+                to_emails=infosec_team_mail,
+                cc_emails=me_mail,
                 subject='Новый мак в защищенной сети',
                 body_text=MacNotification.body_text,
             )
