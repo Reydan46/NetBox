@@ -20,3 +20,4 @@ utilities/dhcpd.leases
 data/VMs_*.csv
 *.log
 config.py
+.vscode/settings.json

@@ -384,7 +384,7 @@ class NetboxDevice:
             # Дествия с кабелем со стороны свича
             if self.__neighbor_interface.cable:
                 # Проверить наличие конечного устройства за портом свича
-                if self.__neighbor_interface.connected_endpoints:
+                if hasattr(self.__neighbor_interface, 'connected_endpoints') and self.__neighbor_interface.connected_endpoints:
                     # Проверить что IP адреса устройств принадлежат одной подсети
                     self.local_device_prefix = NetboxDevice.get_prefix_for_ip(
                         self.__ip_address
