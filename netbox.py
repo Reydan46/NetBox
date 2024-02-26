@@ -430,8 +430,12 @@ class NetboxDevice:
                 # Если конечного устройства нет
                 else:
                     # Если кабель "висит" в воздухе - удаляем
-                    if not self.__neighbor_interface.link_peers or interface.kind == 'frontport':
+                    if not self.__neighbor_interface.link_peers:
                         self.__neighbor_interface.cable.delete()
+                    elif interface.kind == 'frontport':
+                        raise Error(
+                            f"Can't connect {self.__serial_number} {self.__ip_address} to {neighbor_device.hostname} {self.__neighbor_interface.name}\nSwitch interface was connected to {self.__neighbor_interface.link_peers[0].device}\n{self.__neighbor_interface.link_peers[0].device.url}", self.__ip_address
+                        )
                     else:
                         # Получить front_port соответствующий rear_port
                         netbox_front_port = self.netbox_connection.dcim.front_ports.get(
@@ -457,7 +461,7 @@ class NetboxDevice:
                 logger.debug(f'The cable has been created')
             except Exception as e:
                 Error(
-                    f"Can't connect {self.__netbox_interface.device} to {self.__neighbor_interface.device}", self.__ip_address)
+                    f"Can't connect {interface.lldp_rem['name']} {interface.rem_ip} to {neighbor_device.hostname} {self.__neighbor_interface.name}\nSwitch interface was connected to {self.__neighbor_interface.connected_endpoints[0].device}\n{self.__neighbor_interface.connected_endpoints[0].device.url}", self.__ip_address)
 
         def check_and_recreate_cable_if_needed():
             for link_peer in self.__netbox_interface.link_peers:

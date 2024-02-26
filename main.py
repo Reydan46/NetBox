@@ -262,7 +262,7 @@ class CableConnectionError:
         self.netbox_url = clean_url(netbox_url)
 
     def __str__(self):
-        return (f"<p><strong>Коммутатор:</strong> {self.switch} {self.switch_interface}<br>"
+        return (f"<p><strong>Коммутатор/розетка:</strong> {self.switch} {self.switch_interface}<br>"
                 f"<strong>Актуальное устройство:</strong> {self.curr_device_name} {self.curr_device_ip}<br>"
                 f"<strong>Предыдущие данные:</strong> {self.old_device_ip}"
                 f" <a href=\"{self.netbox_url}\">{self.netbox_url}</a></p>")
@@ -370,7 +370,10 @@ def create_host(neighbor_device, neighbor_interface):
     )
 
     host_netbox_device.add_interface(host_interface)
-    host_netbox_device.connect_to_neighbor(neighbor_device, neighbor_interface)
+    try:
+        host_netbox_device.connect_to_neighbor(neighbor_device, neighbor_interface)
+    except Error as e:
+        pass
 
 
 def create_socket(interface, switch_network_device):
