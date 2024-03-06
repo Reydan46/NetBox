@@ -511,7 +511,7 @@ if __name__ == '__main__':
                     # БЛОК РАБОТЫ С КОНЕЧНЫМИ УСТРОЙСТВАМИ
                     # Определяем номер порта
                     match = re.search(
-                        r"(?<![Po,Port\-channel])\d+$", interface.name
+                        r"(?<!Po)(?<!Port-channel)\d+$", interface.name
                     )
                     if match:
                         port_number = match.group()
