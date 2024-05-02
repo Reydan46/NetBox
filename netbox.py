@@ -183,10 +183,22 @@ class NetboxDevice:
         self.__create_device() if not self.__netbox_device else self.__check_serial_number()
 
     def __get_or_create_netbox_vm(self):
-        self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.get(
-            name=self.hostname,
-            status="active"
+        # Получение списка ВМ по имени (без учета регистра) из Netbox
+        vms = self.netbox_connection.virtualization.virtual_machines.filter(
+            name=self.hostname
         )
+        # Отфильтровываем ВМ, чтобы имя совпадало полностью с учетом регистра
+        self.__netbox_device = [vm for vm in vms if vm.name == self.hostname]
+
+        # Если список пустой или содержит больше одного элемента это ошибка
+        if len(self.__netbox_device) > 1:
+            raise Error(f"{self.hostname}: found several VMs with the same name")
+        elif len(self.__netbox_device) == 0:
+            pass
+        else:
+            # Успешно найдена одна ВМ с точно совпадающим именем
+            self.__netbox_device = self.__netbox_device[0]  # Выбираем первый (и единственный) элемент списка
+        
         if not self.__netbox_device:
             logger.debug(
                 f'Virtual machine {self.__ip_address} not found in NetBox'
