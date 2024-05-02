@@ -184,7 +184,8 @@ class NetboxDevice:
 
     def __get_or_create_netbox_vm(self):
         self.__netbox_device = self.netbox_connection.virtualization.virtual_machines.get(
-            name=self.hostname
+            name=self.hostname,
+            status="active"
         )
         if not self.__netbox_device:
             logger.debug(
